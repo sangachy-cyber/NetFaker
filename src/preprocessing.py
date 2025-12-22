@@ -698,7 +698,16 @@ def stage9_recompute_condition_vectors(    datasets: Dict[str, List[WindowMetaRe
         normed_metas = []
         for trace_id, metas in traces.items():
             for i, meta in enumerate(metas):
-                window_df = meta['window']
+                window_df = meta['window'].copy()  # 创建副本以避免修改原始数据
+                
+                # 将部分丢包值映射为均值，确保训练和推理的一致性
+                # 对于上行丢包
+                is_cat2_up = (window_df['loss_up'] > 0) & (window_df['loss_up'] < 1)
+                window_df.loc[is_cat2_up, 'loss_up'] = mean_loss_cat2_up
+                
+                # 对于下行丢包
+                is_cat2_dn = (window_df['loss_dn'] > 0) & (window_df['loss_dn'] < 1)
+                window_df.loc[is_cat2_dn, 'loss_dn'] = mean_loss_cat2_dn
                 
                 # 计算全局特征
                 global_features = _compute_window_features(window_df)
