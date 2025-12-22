@@ -755,7 +755,9 @@ def stage9_recompute_condition_vectors(    datasets: Dict[str, List[WindowMetaRe
                 normed_metas.append(normed_meta)
         
         final_datasets[dataset_name] = normed_metas
-    
+    print(f"Total cat=2 up samples: {len(cat2_up_values)}")
+    print(f"Mean loss for cat=2 up: {mean_loss_cat2_up:.4f}")
+    print(f"Total windows with cat=2 up: {sum(1 for meta in train_dataset if not meta['is_first'] and ((meta['window']['loss_up'] > 0) & (meta['window']['loss_up'] < 1)).any())}")
     return final_datasets, extra_assets
 
 
