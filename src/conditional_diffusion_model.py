@@ -48,9 +48,6 @@ class ConditionalUNet1D(nn.Module):
     ):
         super().__init__()
         
-        # 由于我们不能直接使用diffusers，我们需要手动实现类似功能
-        # 这里简化实现，重点是条件注入机制
-        
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.sample_size = sample_size
@@ -212,24 +209,35 @@ class ConditionalUNet1D(nn.Module):
         
         # 解码器
         h_middle_up = self.upsample(h_middle)  # (B, 256, 24)
+        # 调整尺寸以匹配
+        if h_middle_up.size(2) != h3.size(2):
+            h_middle_up = F.interpolate(h_middle_up, size=h3.size(2), mode='nearest')
         h_dec3 = torch.cat([h_middle_up, h3], dim=1)  # (B, 512, 24) -> (B, 256, 24)
         h_dec3 = self.dec3(h_dec3)
         h_dec3 = self.attn_dec3(h_dec3)
         
         h_dec3_up = self.upsample(h_dec3)  # (B, 256, 48)
+        # 调整尺寸以匹配
+        if h_dec3_up.size(2) != h2.size(2):
+            h_dec3_up = F.interpolate(h_dec3_up, size=h2.size(2), mode='nearest')
         h_dec2 = torch.cat([h_dec3_up, h2], dim=1)  # (B, 384, 48) -> (B, 128, 48)
         h_dec2 = self.dec2(h_dec2)
         h_dec2 = self.attn_dec2(h_dec2)
         
         h_dec2_up = self.upsample(h_dec2)  # (B, 128, 96)
-        # 需要补齐到100
-        pad = torch.zeros(h_dec2_up.size(0), h_dec2_up.size(1), 4).to(h_dec2_up.device)
-        h_dec2_up = torch.cat([h_dec2_up, pad], dim=2)  # (B, 128, 100)
+        # 调整尺寸以匹配
+        if h_dec2_up.size(2) != h1.size(2):
+            h_dec2_up = F.interpolate(h_dec2_up, size=h1.size(2), mode='nearest')
         
         h_dec1 = torch.cat([h_dec2_up, h1], dim=1)  # (B, 192, 100) -> (B, 64, 100)
         output = self.dec1(h_dec1)  # (B, 4, 100)
         
-        return output
+        # 创建一个类似diffusers输出的对象
+        class Output:
+            def __init__(self, sample):
+                self.sample = sample
+        
+        return Output(output)
 
 
 class SinusoidalPositionEmbeddings(nn.Module):
@@ -286,12 +294,25 @@ def validate_cond(cond: torch.Tensor, num_network_states: int = 8):
         raise ValueError(f"network_state_id out of range [0, {num_network_states})")
 
 
-# 示例用法
+# 测试模型
 if __name__ == "__main__":
     # 创建模型实例
     model = ConditionalUNet1D()
     
     print("条件扩散模型已创建")
     print(f"模型参数数量: {sum(p.numel() for p in model.parameters()):,}")
-    print("模型结构:")
-    print(model)
+    
+    # 测试前向传播
+    batch_size = 2
+    sample = torch.randn(batch_size, 4, 100)  # (B, channels, length)
+    timestep = torch.randint(0, 1000, (batch_size,))
+    cond = torch.randn(batch_size, 23)
+    
+    # 设置网络状态ID为有效值
+    cond[:, 11] = torch.randint(0, 8, (batch_size,)).float()
+    
+    with torch.no_grad():
+        output = model(sample, timestep, cond)
+        print(f"输入形状: {sample.shape}")
+        print(f"输出形状: {output.sample.shape}")
+        print("前向传播测试通过")
