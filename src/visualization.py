@@ -322,32 +322,6 @@ def plot_window_features(features: Dict[str, pd.DataFrame], output_dir: Path):
                 plt.tight_layout()
                 plt.savefig(output_dir / f'{key}_features.png', dpi=300, bbox_inches='tight')
                 plt.close()
-    
-    # 为包含部分丢包的窗口绘制特殊的loss_up分布图
-    for key, df in features.items():
-        if 'window' in key and isinstance(df, pd.DataFrame):
-            # 筛选出包含部分丢包的窗口
-            has_cat2 = (df['loss_up'] > 0) & (df['loss_up'] < 1)
-            cat2_data = df[has_cat2]['loss_up'].dropna()
-            
-            if len(cat2_data) > 0:
-                # 绘制部分丢包值的分布
-                plt.figure(figsize=(10, 6))
-                plt.hist(cat2_data, bins=30, alpha=0.7, color='orange', edgecolor='black', linewidth=0.5)
-                plt.title(f'{key} - 部分丢包(cat=2)窗口的loss_up分布\n(共{len(cat2_data)}个样本点)', fontsize=14)
-                plt.xlabel('loss_up值')
-                plt.ylabel('频次')
-                plt.grid(True, alpha=0.3)
-                
-                # 标记均值
-                mean_value = np.mean(cat2_data)
-                plt.axvline(mean_value, color='red', linestyle='--', linewidth=2, 
-                           label=f'均值: {mean_value:.5f}')
-                plt.legend()
-                
-                plt.tight_layout()
-                plt.savefig(output_dir / f'{key}_cat2_loss_up_distribution.png', dpi=300, bbox_inches='tight')
-                plt.close()
 
 
 def generate_visualizations(data_path: Path, output_dir: Path = None):
