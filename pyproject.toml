@@ -33,4 +33,4 @@ dev = [
 ]
 
 [tool.uv]
-index-url = "https://mirrors.huaweicloud.com/repository/pypi/simple"
+index-url = "https://pypi.douban.com/simple"
