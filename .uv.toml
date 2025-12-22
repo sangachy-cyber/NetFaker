@@ -1,5 +1,0 @@
-[install]
-resolution = "highest"
-
-[cache]
-dir = ".uv-cache"

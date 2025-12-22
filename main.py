@@ -37,25 +37,17 @@ def main():
     for txt_file in tqdm(txt_files, desc="Processing files"):
         try:
             df_raw = stage1_parse_txt(txt_file, cfg["raw_interval_sec"])
-            print(f"File {txt_file.name}: Parsed {len(df_raw)} rows")
-            
             df_clean = stage2_clean_and_truncate(df_raw, cfg["max_delay_ms"])
-            print(f"File {txt_file.name}: Cleaned {len(df_clean)} rows")
-            
             segments = stage3_split_and_resample(
                 df_clean,
                 max_gap_sec=cfg["max_gap_sec"],
                 min_rows=cfg["min_segment_rows"],
                 max_invalid_ratio=cfg.get("max_invalid_ratio", 0.01)
             )
-            print(f"File {txt_file.name}: Got {len(segments)} segments")
-            
             windows = []
             for seg in segments:
                 seg_windows = stage4_extract_windows([seg], cfg["window_size"], cfg["step_size"])
                 windows.extend(seg_windows)
-            
-            print(f"File {txt_file.name}: Extracted {len(windows)} windows")
             
             if not windows:
                 empty_files.append(str(txt_file))
@@ -63,15 +55,11 @@ def main():
 
             trace_id = txt_file.stem
             window_metas = stage5_mark_first_window(windows, trace_id)
-            print(f"File {txt_file.name}: Created {len(window_metas)} window metas")
             all_windows_meta.extend(window_metas)
 
         except Exception as e:
-            print(f"File {txt_file.name}: Error - {str(e)}")
             failed_files.append(f"{txt_file}: {str(e)}")
             continue
-
-    print(f"Total window metas: {len(all_windows_meta)}")
 
     # 保存失败/空文件
     if failed_files:
@@ -84,11 +72,6 @@ def main():
     # 聚合为 trace 级
     traces_dict = stage6_group_by_trace_id(all_windows_meta)
     
-    # 打印调试信息
-    print(f"Number of traces: {len(traces_dict)}")
-    for trace_id, metas in traces_dict.items():
-        print(f"Trace {trace_id}: {len(metas)} windows")
-    
     # 按 trace 划分（整 trace 分配）
     train, val, test = stage7_assign_split_by_trace(
         traces_dict,
@@ -96,15 +79,7 @@ def main():
         val_ratio=cfg["split"]["val"],
         random_state=cfg["split"]["random_state"]
     )
-
-    print(f"Train size: {len(train)}, Val size: {len(val)}, Test size: {len(test)}")
     
-    # 检查训练集
-    if not train:
-        print("ERROR: Training set is empty!")
-        print("Traces dict keys:", list(traces_dict.keys()))
-        return
-
     # 归一化 + 列重命名
     renamed_datasets, assets = stage8_fit_and_normalize(
         train, val, test, random_state=cfg["quantile_transformer"]["random_state"]
@@ -161,13 +136,6 @@ def main():
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
     stage11_generate_report(stats, cfg, Path(cfg["report_template"]), out_dir / "data_report.md")
-    
-    # 生成可视化报告
-    try:
-        from src.visualization import generate_visualizations
-        generate_visualizations(out_dir / "datasets", out_dir / "visualizations")
-    except Exception as e:
-        print(f"警告: 生成可视化报告时出错: {e}")
 
 
 if __name__ == "__main__":
