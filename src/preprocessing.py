@@ -520,9 +520,10 @@ def _compute_window_features(window_df):
     features[3] = np.mean(window_df['del_dn'])   # mean_del_dn
     features[4] = np.std(window_df['del_dn'])    # std_del_dn
     features[5] = np.percentile(window_df['del_dn'], 95)  # p95_del_dn
+    # 简化丢包分类，只保留cat0和cat1
     features[6] = np.mean(window_df['loss_up'] == 0.0)    # frac_cat0_up
     features[7] = np.mean(window_df['loss_up'] == 1.0)    # frac_cat1_up
-    features[8] = np.mean((window_df['loss_up'] > 0) & (window_df['loss_up'] < 1))  # frac_cat2_up
+    features[8] = 0.0  # frac_cat2_up (废弃)
     features[9] = np.mean(window_df['loss_dn'] == 0.0)    # frac_cat0_dn
     features[10] = np.mean(window_df['loss_dn'] == 1.0)   # frac_cat1_dn
     # features[11] 网络状态ID将在后面设置
@@ -553,7 +554,7 @@ def _compute_local_features(window_df, last_n=5):
     features[1] = np.std(last_rows['del_up'])    # prev_std_del_up
     features[2] = np.mean(last_rows['loss_up'] == 0.0)    # prev_frac_cat0_up
     features[3] = np.mean(last_rows['loss_up'] == 1.0)    # prev_frac_cat1_up
-    features[4] = np.mean((last_rows['loss_up'] > 0) & (last_rows['loss_up'] < 1))  # prev_frac_cat2_up
+    features[4] = 0.0  # prev_frac_cat2_up (废弃)
     features[5] = np.mean(last_rows['del_dn'])   # prev_mean_del_dn
     features[6] = np.std(last_rows['del_dn'])    # prev_std_del_dn
     features[7] = np.mean(last_rows['loss_dn'] == 0.0)    # prev_frac_cat0_dn
@@ -653,23 +654,9 @@ def stage9_recompute_condition_vectors(    datasets: Dict[str, List[WindowMetaRe
         cond_mean = np.zeros(21)
         cond_std = np.ones(21)
     
-    # 计算训练集中部分丢包的均值
-    cat2_up_values = []
-    cat2_dn_values = []
-    for meta in train_dataset:
-        if not meta['is_first']:  # 仅考虑 keep=True 的样本
-            window_df = meta['window']
-            # 上行部分丢包
-            cat2_up_mask = (window_df['loss_up'] > 0) & (window_df['loss_up'] < 1)
-            if np.any(cat2_up_mask):
-                cat2_up_values.extend(window_df.loc[cat2_up_mask, 'loss_up'].values)
-            
-            # 下行部分丢包
-            cat2_dn_mask = (window_df['loss_dn'] > 0) & (window_df['loss_dn'] < 1)
-            if np.any(cat2_dn_mask):
-                cat2_dn_values.extend(window_df.loc[cat2_dn_mask, 'loss_dn'].values)    
-    mean_loss_cat2_up = np.mean(cat2_up_values) if cat2_up_values else 0.5
-    mean_loss_cat2_dn = np.mean(cat2_dn_values) if cat2_dn_values else 0.5
+    # 计算训练集中部分丢包的均值（已废弃，但仍保留以保持接口兼容性）
+    mean_loss_cat2_up = 0.5
+    mean_loss_cat2_dn = 0.5
     
     extra_assets = {
         'init_local_cond': init_local_cond,
@@ -700,14 +687,12 @@ def stage9_recompute_condition_vectors(    datasets: Dict[str, List[WindowMetaRe
             for i, meta in enumerate(metas):
                 window_df = meta['window'].copy()  # 创建副本以避免修改原始数据
                 
-                # 将部分丢包值映射为均值，确保训练和推理的一致性
-                # 对于上行丢包
-                is_cat2_up = (window_df['loss_up'] > 0) & (window_df['loss_up'] < 1)
-                window_df.loc[is_cat2_up, 'loss_up'] = mean_loss_cat2_up
+                # 简化丢包处理，移除部分丢包类别（cat=2）
+                # 上行丢包只保留0和1两个类别
+                window_df.loc[window_df['loss_up'] > 0, 'loss_up'] = 1.0
                 
-                # 对于下行丢包
-                is_cat2_dn = (window_df['loss_dn'] > 0) & (window_df['loss_dn'] < 1)
-                window_df.loc[is_cat2_dn, 'loss_dn'] = mean_loss_cat2_dn
+                # 下行丢包只保留0和1两个类别
+                window_df.loc[window_df['loss_dn'] > 0, 'loss_dn'] = 1.0
                 
                 # 计算全局特征
                 global_features = _compute_window_features(window_df)
@@ -755,9 +740,7 @@ def stage9_recompute_condition_vectors(    datasets: Dict[str, List[WindowMetaRe
                 normed_metas.append(normed_meta)
         
         final_datasets[dataset_name] = normed_metas
-    print(f"Total cat=2 up samples: {len(cat2_up_values)}")
-    print(f"Mean loss for cat=2 up: {mean_loss_cat2_up:.4f}")
-    print(f"Total windows with cat=2 up: {sum(1 for meta in train_dataset if not meta['is_first'] and ((meta['window']['loss_up'] > 0) & (meta['window']['loss_up'] < 1)).any())}")
+    print("已移除部分丢包类别（cat=2），只保留无丢包（cat=0）和全丢包（cat=1）两类")
     return final_datasets, extra_assets
 
 
