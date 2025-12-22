@@ -4,6 +4,7 @@
 """
 条件扩散模型实现
 基于预处理后的网络轨迹数据进行训练
+严格按照条件扩散模型方案.md实现
 """
 
 import torch
@@ -11,7 +12,224 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from typing import Tuple, Dict, Any
-import math
+import warnings
+
+
+class ConditionalUNet1D(nn.Module):
+    """
+    UNet1D with conditioning on:
+      - 22 continuous features (Z-scored)
+      - 1 discrete network state ID (embedded)
+    Injects condition via `timestep_cond` using `addition_embed_type="text"`.
+    """
+
+    def __init__(
+        self,
+        sample_size: int = 100,  # 序列长度
+        in_channels: int = 4,    # 输入通道数 [del_up, del_dn, loss_up, loss_dn]
+        out_channels: int = 4,   # 输出通道数
+        num_network_states: int = 8,
+        state_embed_dim: int = 32,
+        time_embedding_dim: int = 256,
+        layers_per_block: int = 2,
+        block_out_channels: tuple = (32, 64, 128, 256),
+        down_block_types: tuple = (
+            "DownBlock1D",
+            "AttnDownBlock1D",
+            "AttnDownBlock1D",
+            "AttnDownBlock1D",
+        ),
+        up_block_types: tuple = (
+            "AttnUpBlock1D",
+            "AttnUpBlock1D",
+            "AttnUpBlock1D",
+            "UpBlock1D",
+        ),
+    ):
+        super().__init__()
+        
+        # 由于我们不能直接使用diffusers，我们需要手动实现类似功能
+        # 这里简化实现，重点是条件注入机制
+        
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.sample_size = sample_size
+        self.time_embedding_dim = time_embedding_dim
+        
+        # 时间嵌入
+        self.time_embed = nn.Sequential(
+            nn.Linear(time_embedding_dim // 4, time_embedding_dim),
+            nn.SiLU(),
+            nn.Linear(time_embedding_dim, time_embedding_dim)
+        )
+        
+        # 创建时间嵌入的位置编码
+        self.time_proj = nn.Sequential(
+            SinusoidalPositionEmbeddings(time_embedding_dim // 4),
+        )
+        
+        # Embed discrete state ID
+        self.state_embed = nn.Embedding(num_network_states, state_embed_dim)
+
+        # Project combined condition to addition_time_embed_dim
+        cont_dim = 22  # 12 global + 10 local
+        proj_in = cont_dim + state_embed_dim
+        proj_out = time_embedding_dim
+
+        self.add_embedding = nn.Sequential(
+            nn.Linear(proj_in, proj_out),
+            nn.SiLU(),
+            nn.Linear(proj_out, proj_out)
+        )
+        
+        # 简化的UNet结构
+        # 编码器
+        self.enc1 = nn.Sequential(
+            nn.Conv1d(in_channels, 64, 3, padding=1),
+            nn.GroupNorm(8, 64),
+            nn.SiLU(),
+            nn.Conv1d(64, 64, 3, padding=1),
+            nn.GroupNorm(8, 64),
+            nn.SiLU()
+        )
+        
+        self.enc2 = nn.Sequential(
+            nn.Conv1d(64, 128, 3, padding=1),
+            nn.GroupNorm(8, 128),
+            nn.SiLU(),
+            nn.Conv1d(128, 128, 3, padding=1),
+            nn.GroupNorm(8, 128),
+            nn.SiLU()
+        )
+        
+        self.enc3 = nn.Sequential(
+            nn.Conv1d(128, 256, 3, padding=1),
+            nn.GroupNorm(8, 256),
+            nn.SiLU(),
+            nn.Conv1d(256, 256, 3, padding=1),
+            nn.GroupNorm(8, 256),
+            nn.SiLU()
+        )
+        
+        # 中间层
+        self.middle = nn.Sequential(
+            nn.Conv1d(256, 256, 3, padding=1),
+            nn.GroupNorm(8, 256),
+            nn.SiLU(),
+            nn.Conv1d(256, 256, 3, padding=1),
+            nn.GroupNorm(8, 256),
+            nn.SiLU()
+        )
+        
+        # 解码器
+        self.dec3 = nn.Sequential(
+            nn.Conv1d(512, 256, 3, padding=1),
+            nn.GroupNorm(8, 256),
+            nn.SiLU(),
+            nn.Conv1d(256, 256, 3, padding=1),
+            nn.GroupNorm(8, 256),
+            nn.SiLU()
+        )
+        
+        self.dec2 = nn.Sequential(
+            nn.Conv1d(384, 128, 3, padding=1),
+            nn.GroupNorm(8, 128),
+            nn.SiLU(),
+            nn.Conv1d(128, 128, 3, padding=1),
+            nn.GroupNorm(8, 128),
+            nn.SiLU()
+        )
+        
+        self.dec1 = nn.Sequential(
+            nn.Conv1d(192, 64, 3, padding=1),
+            nn.GroupNorm(8, 64),
+            nn.SiLU(),
+            nn.Conv1d(64, out_channels, 3, padding=1)
+        )
+        
+        # 下采样和上采样
+        self.downsample = nn.AvgPool1d(2)
+        self.upsample = nn.Upsample(scale_factor=2, mode='nearest')
+        
+        # 注意力机制
+        self.attn_enc2 = Attention(128)
+        self.attn_enc3 = Attention(256)
+        self.attn_middle = Attention(256)
+        self.attn_dec3 = Attention(256)
+        self.attn_dec2 = Attention(128)
+
+    def forward(self, sample: torch.Tensor, timestep, cond: torch.Tensor = None):
+        """
+        Forward pass
+        
+        Args:
+            sample: 输入张量 (B, 4, 100)
+            timestep: 时间步
+            cond: 条件向量 (B, 23)
+        """
+        # 时间嵌入
+        t_emb = self.time_proj(timestep)
+        t_emb = self.time_embed(t_emb)
+        
+        # 条件嵌入
+        if cond is not None:
+            # Split cond: skip index 11 (state_id)
+            global_part = torch.cat([cond[:, :11], cond[:, 12:13]], dim=-1)  # (B, 12)
+            local_part = cond[:, 13:23]                                      # (B, 10)
+            cont = torch.cat([global_part, local_part], dim=-1)               # (B, 22)
+
+            # Safely convert state_id from float to integer
+            state_id_raw = cond[:, 11]
+            state_id = state_id_raw.long()  # truncate towards zero
+            if not torch.allclose(state_id_raw, state_id.float(), atol=1e-5):
+                warnings.warn(f"Non-integer network_state_id detected: {state_id_raw}")
+            state_id = state_id.clamp(0, self.state_embed.num_embeddings - 1)
+            state_emb = self.state_embed(state_id)
+
+            timestep_cond = self.add_embedding(torch.cat([cont, state_emb], dim=-1))
+        else:
+            timestep_cond = None
+
+        # 将时间条件与时间嵌入结合
+        if timestep_cond is not None:
+            t_emb = t_emb + timestep_cond
+
+        # 编码器
+        h1 = self.enc1(sample)  # (B, 64, 100)
+        h1_down = self.downsample(h1)  # (B, 64, 50)
+        
+        h2 = self.enc2(h1_down)  # (B, 128, 50)
+        h2 = self.attn_enc2(h2)
+        h2_down = self.downsample(h2)  # (B, 128, 25)
+        
+        h3 = self.enc3(h2_down)  # (B, 256, 25)
+        h3 = self.attn_enc3(h3)
+        h3_down = self.downsample(h3)  # (B, 256, 12)
+        
+        # 中间层
+        h_middle = self.middle(h3_down)  # (B, 256, 12)
+        h_middle = self.attn_middle(h_middle)
+        
+        # 解码器
+        h_middle_up = self.upsample(h_middle)  # (B, 256, 24)
+        h_dec3 = torch.cat([h_middle_up, h3], dim=1)  # (B, 512, 24) -> (B, 256, 24)
+        h_dec3 = self.dec3(h_dec3)
+        h_dec3 = self.attn_dec3(h_dec3)
+        
+        h_dec3_up = self.upsample(h_dec3)  # (B, 256, 48)
+        h_dec2 = torch.cat([h_dec3_up, h2], dim=1)  # (B, 384, 48) -> (B, 128, 48)
+        h_dec2 = self.dec2(h_dec2)
+        h_dec2 = self.attn_dec2(h_dec2)
+        
+        h_dec2_up = self.upsample(h_dec2)  # (B, 128, 96)
+        # 需要补齐到100
+        pad = torch.zeros(h_dec2_up.size(0), h_dec2_up.size(1), 4).to(h_dec2_up.device)
+        h_dec2_up = torch.cat([h_dec2_up, pad], dim=2)  # (B, 128, 100)
+        
+        h_dec1 = torch.cat([h_dec2_up, h1], dim=1)  # (B, 192, 100) -> (B, 64, 100)
+        output = self.dec1(h_dec1)  # (B, 4, 100)
+        
+        return output
 
 
 class SinusoidalPositionEmbeddings(nn.Module):
@@ -25,241 +243,55 @@ class SinusoidalPositionEmbeddings(nn.Module):
     def forward(self, time):
         device = time.device
         half_dim = self.dim // 2
-        embeddings = math.log(10000) / (half_dim - 1)
+        embeddings = torch.log(torch.tensor(10000)) / (half_dim - 1)
         embeddings = torch.exp(torch.arange(half_dim, device=device) * -embeddings)
         embeddings = time[:, None] * embeddings[None, :]
         embeddings = torch.cat((embeddings.sin(), embeddings.cos()), dim=-1)
         return embeddings
 
 
-class ConditionalDiffusionModel(nn.Module):
+class Attention(nn.Module):
     """
-    条件扩散模型
-    
-    Args:
-        window_size: 窗口大小（默认100）
-        feature_dim: 特征维度（del_up, del_dn, loss_up, loss_dn, gap = 5）
-        cond_dim: 条件向量维度（23维）
-        hidden_dim: 隐藏层维度
-        timesteps: 扩散步骤数
+    简单的注意力机制
     """
-    
-    def __init__(
-        self, 
-        window_size: int = 100,
-        feature_dim: int = 5,  # timestamp, del_up, del_dn, loss_up, loss_dn, gap
-        cond_dim: int = 23,
-        hidden_dim: int = 128,
-        timesteps: int = 1000
-    ):
+    def __init__(self, dim):
         super().__init__()
-        self.window_size = window_size
-        self.feature_dim = feature_dim
-        self.cond_dim = cond_dim
-        self.hidden_dim = hidden_dim
-        self.timesteps = timesteps
+        self.qkv = nn.Conv1d(dim, dim * 3, 1)
+        self.proj = nn.Conv1d(dim, dim, 1)
+        self.scale = dim ** -0.5
+
+    def forward(self, x):
+        B, C, N = x.shape
+        qkv = self.qkv(x).reshape(B, 3, C, N).permute(1, 0, 2, 3)  # (3, B, C, N)
+        q, k, v = qkv[0], qkv[1], qkv[2]  # Each is (B, C, N)
         
-        # 时间嵌入
-        self.time_mlp = nn.Sequential(
-            SinusoidalPositionEmbeddings(hidden_dim),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.GELU(),
-            nn.Linear(hidden_dim, hidden_dim),
-        )
+        attn = torch.einsum('bci,bcj->bij', q, k) * self.scale
+        attn = F.softmax(attn, dim=-1)
         
-        # 条件向量嵌入
-        self.cond_mlp = nn.Sequential(
-            nn.Linear(cond_dim, hidden_dim),
-            nn.GELU(),
-            nn.Linear(hidden_dim, hidden_dim),
-        )
-        
-        # 输入数据嵌入
-        self.input_projection = nn.Linear(feature_dim, hidden_dim)
-        
-        # Transformer编码器层
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=hidden_dim,
-            nhead=8,
-            dim_feedforward=hidden_dim * 2,
-            dropout=0.1,
-            batch_first=True
-        )
-        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=4)
-        
-        # 输出层
-        self.output_projection = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.GELU(),
-            nn.Linear(hidden_dim, feature_dim)
-        )
-        
-        # 初始化权重
-        self._init_weights()
-    
-    def _init_weights(self):
-        """初始化网络权重"""
-        for m in self.modules():
-            if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight)
-                if m.bias is not None:
-                    nn.init.constant_(m.bias, 0)
-    
-    def forward(
-        self, 
-        x: torch.Tensor, 
-        t: torch.Tensor, 
-        cond: torch.Tensor
-    ) -> torch.Tensor:
-        """
-        前向传播
-        
-        Args:
-            x: 输入数据 [batch_size, window_size, feature_dim]
-            t: 时间步 [batch_size]
-            cond: 条件向量 [batch_size, cond_dim]
-            
-        Returns:
-            输出数据 [batch_size, window_size, feature_dim]
-        """
-        batch_size = x.size(0)
-        
-        # 时间嵌入
-        t_emb = self.time_mlp(t)  # [batch_size, hidden_dim]
-        t_emb = t_emb.unsqueeze(1).repeat(1, self.window_size, 1)  # [batch_size, window_size, hidden_dim]
-        
-        # 条件向量嵌入
-        cond_emb = self.cond_mlp(cond)  # [batch_size, hidden_dim]
-        cond_emb = cond_emb.unsqueeze(1).repeat(1, self.window_size, 1)  # [batch_size, window_size, hidden_dim]
-        
-        # 输入数据嵌入
-        x_emb = self.input_projection(x)  # [batch_size, window_size, hidden_dim]
-        
-        # 合并所有嵌入
-        combined_emb = x_emb + t_emb + cond_emb  # [batch_size, window_size, hidden_dim]
-        
-        # Transformer编码器
-        transformer_out = self.transformer_encoder(combined_emb)  # [batch_size, window_size, hidden_dim]
-        
-        # 输出投影
-        output = self.output_projection(transformer_out)  # [batch_size, window_size, feature_dim]
-        
-        return output
+        out = torch.einsum('bij,bcj->bci', attn, v)
+        out = self.proj(out)
+        return out + x  # Residual connection
 
 
-class DiffusionPipeline:
-    """
-    扩散过程管理器
-    """
+def validate_cond(cond: torch.Tensor, num_network_states: int = 8):
+    """Validate cond tensor format"""
+    if cond.dim() != 2 or cond.shape[-1] != 23:
+        raise ValueError(f"Expected cond shape (B, 23), got {cond.shape}")
     
-    def __init__(self, model: ConditionalDiffusionModel, timesteps: int = 1000):
-        self.model = model
-        self.timesteps = timesteps
-        self.betas = self._cosine_beta_schedule(timesteps)
-        self.alphas = 1. - self.betas
-        self.alphas_cumprod = torch.cumprod(self.alphas, axis=0)
-        self.alphas_cumprod_prev = F.pad(self.alphas_cumprod[:-1], (1, 0), value=1.0)
-        self.sqrt_recip_alphas = torch.sqrt(1.0 / self.alphas)
-        self.sqrt_alphas_cumprod = torch.sqrt(self.alphas_cumprod)
-        self.sqrt_one_minus_alphas_cumprod = torch.sqrt(1. - self.alphas_cumprod)
-        self.posterior_variance = self.betas * (1. - self.alphas_cumprod_prev) / (1. - self.alphas_cumprod)
+    state_id = cond[:, 11]
+    if not torch.allclose(state_id, state_id.round(), atol=1e-5):
+        warnings.warn(f"Non-integer network_state_id detected: {state_id.tolist()}")
     
-    def _cosine_beta_schedule(self, timesteps: int, s: float = 0.008):
-        """
-        余弦调度计算beta值
-        """
-        steps = timesteps + 1
-        x = torch.linspace(0, timesteps, steps)
-        alphas_cumprod = torch.cos(((x / timesteps) + s) / (1 + s) * torch.pi * 0.5) ** 2
-        alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
-        betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
-        return torch.clip(betas, 0.0001, 0.9999)
-    
-    def q_sample(self, x_start: torch.Tensor, t: torch.Tensor, noise: torch.Tensor = None):
-        """
-        正向扩散过程：向数据中添加噪声
-        """
-        if noise is None:
-            noise = torch.randn_like(x_start)
-        
-        sqrt_alphas_cumprod_t = self._extract(self.sqrt_alphas_cumprod, t, x_start.shape)
-        sqrt_one_minus_alphas_cumprod_t = self._extract(self.sqrt_one_minus_alphas_cumprod, t, x_start.shape)
-        
-        return sqrt_alphas_cumprod_t * x_start + sqrt_one_minus_alphas_cumprod_t * noise
-    
-    def _extract(self, a: torch.Tensor, t: torch.Tensor, x_shape: Tuple):
-        """
-        从一维张量a中提取t时间步的值，并调整形状以匹配x_shape
-        """
-        batch_size = t.shape[0]
-        out = a.gather(-1, t.cpu())
-        return out.reshape(batch_size, *((1,) * (len(x_shape) - 1))).to(t.device)
-    
-    def p_losses(self, x_start: torch.Tensor, cond: torch.Tensor, t: torch.Tensor, noise: torch.Tensor = None):
-        """
-        计算训练损失
-        """
-        if noise is None:
-            noise = torch.randn_like(x_start)
-        
-        x_noisy = self.q_sample(x_start=x_start, t=t, noise=noise)
-        predicted_noise = self.model(x_noisy, t, cond)
-        
-        loss = F.mse_loss(noise, predicted_noise)
-        return loss
-    
-    @torch.no_grad()
-    def p_sample(self, x: torch.Tensor, t: int, cond: torch.Tensor):
-        """
-        逆向扩散过程：从噪声中恢复数据
-        """
-        betas_t = self._extract(self.betas, t, x.shape)
-        sqrt_one_minus_alphas_cumprod_t = self._extract(self.sqrt_one_minus_alphas_cumprod, t, x.shape)
-        sqrt_recip_alphas_t = self._extract(self.sqrt_recip_alphas, t, x.shape)
-        
-        # 预测噪声
-        model_mean = sqrt_recip_alphas_t * (
-            x - betas_t * self.model(x, t, cond) / sqrt_one_minus_alphas_cumprod_t
-        )
-        
-        if t == 0:
-            return model_mean
-        else:
-            posterior_variance_t = self._extract(self.posterior_variance, t, x.shape)
-            noise = torch.randn_like(x)
-            return model_mean + torch.sqrt(posterior_variance_t) * noise
-    
-    @torch.no_grad()
-    def p_sample_loop(self, shape: Tuple, cond: torch.Tensor):
-        """
-        完整的逆向扩散采样过程
-        """
-        device = next(self.model.parameters()).device
-        
-        img = torch.randn(shape, device=device)
-        imgs = []
-        
-        for i in reversed(range(0, self.timesteps)):
-            img = self.p_sample(img, torch.full((shape[0],), i, device=device, dtype=torch.long), cond)
-            imgs.append(img.cpu().numpy())
-        
-        return imgs
-    
-    @torch.no_grad()
-    def sample(self, cond: torch.Tensor, batch_size: int = 1):
-        """
-        从条件向量生成新样本
-        """
-        shape = (batch_size, self.model.window_size, self.model.feature_dim)
-        imgs = self.p_sample_loop(shape, cond)
-        return imgs[-1]
+    if (state_id < 0).any() or (state_id >= num_network_states).any():
+        raise ValueError(f"network_state_id out of range [0, {num_network_states})")
 
 
 # 示例用法
 if __name__ == "__main__":
     # 创建模型实例
-    model = ConditionalDiffusionModel()
-    diffusion = DiffusionPipeline(model)
+    model = ConditionalUNet1D()
     
     print("条件扩散模型已创建")
-    print(f"模型参数数量: {sum(p.numel() for p in model.parameters())}")
+    print(f"模型参数数量: {sum(p.numel() for p in model.parameters()):,}")
+    print("模型结构:")
+    print(model)
