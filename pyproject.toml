@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "netfaker"
+version = "0.1.0"
+description = "Network trajectory generation system"
+authors = [
+    { name = "NetFaker Developers" },
+]
+dependencies = [
+    "numpy>=1.21.0",
+    "pandas>=1.3.0",
+    "pyyaml>=6.0",
+    "scikit-learn>=1.0.0",
+    "tqdm>=4.60.0",
+    "jinja2>=3.0.0",
+]
+requires-python = ">=3.9"
+readme = "README.md"
+license = { text = "MIT" }
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.2.0",
+    "ruff>=0.1.0",
+]
+
+[tool.uv]
+index-url = "https://pypi.tuna.tsinghua.edu.cn/simple/"
+extra-index-url = [
+    "https://pypi.org/simple/",
+]

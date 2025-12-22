@@ -1,0 +1,29 @@
+# 数据处理报告
+
+## 概述
+
+- 处理时间: {{ stats.timestamp }}
+- 总窗口数: {{ stats.total_windows }}
+- 训练集窗口数: {{ stats.train_count }}
+- 验证集窗口数: {{ stats.val_count }}
+- 测试集窗口数: {{ stats.test_count }}
+
+## 文件统计
+
+- 处理文件总数: {{ stats.processed_files }}
+- 失败文件数: {{ stats.failed_files }}
+- 空文件数: {{ stats.empty_files }}
+
+## 配置信息
+
+- 管道版本: {{ config.pipeline_version }}
+- 窗口大小: {{ config.window_size }}
+- 步长: {{ config.step_size }}
+- 最大延迟(ms): {{ config.max_delay_ms }}
+- 最大间隙(秒): {{ config.max_gap_sec }}
+
+## 数据划分
+
+- 训练集比例: {{ config.split.train }}
+- 验证集比例: {{ config.split.val }}
+- 测试集比例: {{ config.split.test }}

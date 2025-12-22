@@ -1,0 +1,30 @@
+pipeline_version: "v1.3"
+input_dir: "data"
+output_dir: "output/run_<auto>"
+
+raw_interval_sec: 0.1
+max_delay_ms: 2000
+max_gap_sec: 2.0
+min_segment_rows: 200
+window_size: 100
+step_size: 50
+max_invalid_ratio: 0.01
+
+split:
+  train: 0.8
+  val: 0.1
+  test: 0.1
+  random_state: 42
+
+quantile_transformer:
+  output_distribution: "normal"
+  random_state: 42
+  n_quantiles: 1000
+  subsample: 100000
+
+# network state extraction
+filename_pattern: ".*_state(\\d+)\\.txt"  # regex to extract network_state_id
+default_network_state_id: 0
+
+output_dtype: "float32"
+report_template: "templates/report.j2"
