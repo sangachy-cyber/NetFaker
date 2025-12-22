@@ -36,9 +36,9 @@ def create_sample_data():
     data = pd.DataFrame({
         'timestamp': timestamps,
         'del_up': np.random.normal(0.1, 0.05, 100),
-        'loss_up': np.random.choice([0.0, 0.5, 1.0], 100, p=[0.7, 0.2, 0.1]),
+        'loss_up': np.random.choice([0.0, 1.0], 100, p=[0.7, 0.3]),  # 只保留0和1
         'del_dn': np.random.normal(0.1, 0.05, 100),
-        'loss_dn': np.random.choice([0.0, 0.5, 1.0], 100, p=[0.7, 0.2, 0.1])
+        'loss_dn': np.random.choice([0.0, 1.0], 100, p=[0.7, 0.3])   # 只保留0和1
     })
     return data
 

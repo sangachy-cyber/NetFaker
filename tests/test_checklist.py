@@ -119,29 +119,31 @@ def test_T6_loss_classification():
     # 创建测试数据，包含各种loss值
     window_df = pd.DataFrame({
         'del_up': [0.1] * 10,
-        'loss_up': [0.0, 0.0, 1.0, 1.0, 0.5, 0.3, 0.0, 1.0, 0.7, 0.0],
+        'loss_up': [0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0],  # 3个1.0
         'del_dn': [0.1] * 10,
-        'loss_dn': [0.0, 1.0, 0.0, 0.5, 1.0, 0.0, 0.3, 0.0, 0.0, 1.0]
+        'loss_dn': [0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]   # 3个1.0
     })
     
     try:
         # 计算全局特征
         features = _compute_window_features(window_df)
         # 检查loss分类
-        frac_cat0_up = features[6]   # frac_cat0_up
-        frac_cat1_up = features[7]   # frac_cat1_up
-        frac_cat2_up = features[8]   # frac_cat2_up
-        frac_cat0_dn = features[9]   # frac_cat0_dn
-        frac_cat1_dn = features[10]  # frac_cat1_dn
+        frac_cat1_up = features[6]   # frac_cat1_up (等于均值)
+        frac_cat2_up = features[7]   # frac_cat2_up (废弃)
+        reserved_up = features[8]    # 保留位置但废弃
+        frac_cat1_dn = features[9]   # frac_cat1_dn (等于均值)
+        frac_cat2_dn = features[10]  # frac_cat2_dn (废弃)
         
-        # 验证上行loss分类 (注意：列表中有3个1.0，所以是0.3而不是0.2)
-        assert frac_cat0_up == 0.4, f"上行cat0比例应为0.4，实际为{frac_cat0_up}"
-        assert frac_cat1_up == 0.3, f"上行cat1比例应为0.3，实际为{frac_cat1_up}"
-        assert frac_cat2_up == 0.3, f"上行cat2比例应为0.3，实际为{frac_cat2_up}"
+        # 验证上行loss分类
+        expected_frac1_up = 0.3  # 3个1.0 / 10个样本
+        assert abs(frac_cat1_up - expected_frac1_up) < 1e-10, f"上行cat1比例应为{expected_frac1_up}，实际为{frac_cat1_up}"
+        assert frac_cat2_up == 0.0, f"上行cat2比例应为0.0（已废弃），实际为{frac_cat2_up}"
+        assert reserved_up == 0.0, f"保留位置应为0.0，实际为{reserved_up}"
         
         # 验证下行loss分类
-        assert frac_cat0_dn == 0.5, f"下行cat0比例应为0.5，实际为{frac_cat0_dn}"
-        assert frac_cat1_dn == 0.3, f"下行cat1比例应为0.3，实际为{frac_cat1_dn}"
+        expected_frac1_dn = 0.3  # 3个1.0 / 10个样本
+        assert abs(frac_cat1_dn - expected_frac1_dn) < 1e-10, f"下行cat1比例应为{expected_frac1_dn}，实际为{frac_cat1_dn}"
+        assert frac_cat2_dn == 0.0, f"下行cat2比例应为0.0（已废弃），实际为{frac_cat2_dn}"
         
         print("  ✓ T6 测试通过: loss分类正确")
         return True
