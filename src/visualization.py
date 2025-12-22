@@ -131,16 +131,34 @@ def plot_histograms(features: Dict[str, np.ndarray], output_dir: Path):
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     
+    # 条件向量特征名称
+    cond_feature_names = [
+        'del_up_mean', 'del_up_std', 'del_up_min', 'del_up_max', 'del_up_slope',
+        'loss_up_frac_cat0', 'loss_up_frac_cat1', 'loss_up_frac_cat2', 'loss_up_mode', 'loss_up_entropy',
+        'network_state_id',
+        'del_dn_mean', 'del_dn_std', 'del_dn_min', 'del_dn_max', 'del_dn_slope',
+        'loss_dn_frac_cat0', 'loss_dn_frac_cat1', 'loss_dn_frac_cat2', 'loss_dn_mode', 'loss_dn_entropy',
+        'prev_window_feature'
+    ]
+    
     # 绘制条件向量的直方图
     for key, data in features.items():
         if 'cond' in key and len(data.shape) == 2:
-            n_features = min(data.shape[1], 6)  # 最多绘制6个特征
+            n_features = data.shape[1]  # 绘制所有特征
+            n_cols = 4
+            n_rows = (n_features + n_cols - 1) // n_cols
             
-            fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+            fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows))
             fig.suptitle(f'{key} - 条件向量特征分布直方图', fontsize=16)
             
+            # 确保axes始终是二维数组
+            if n_rows == 1:
+                axes = axes.reshape(1, -1)
+            elif n_cols == 1:
+                axes = axes.reshape(-1, 1)
+            
             for i in range(n_features):
-                row, col = i // 3, i % 3
+                row, col = i // n_cols, i % n_cols
                 ax = axes[row, col]
                 
                 # 绘制实际数据分布
@@ -152,15 +170,17 @@ def plot_histograms(features: Dict[str, np.ndarray], output_dir: Path):
                 standard_normal = stats.norm.pdf(x, 0, 1)
                 ax.plot(x, standard_normal, 'r-', linewidth=2, label='标准正态分布N(0,1)')
                 
-                ax.set_title(f'特征 {i}')
+                # 获取特征名称
+                feature_name = cond_feature_names[i] if i < len(cond_feature_names) else f'特征 {i}'
+                ax.set_title(f'{feature_name}\n(索引: {i})', fontsize=10)
                 ax.set_xlabel('值')
                 ax.set_ylabel('密度')
                 ax.legend()
                 ax.grid(True, alpha=0.3)
             
             # 隐藏多余的子图
-            for i in range(n_features, 6):
-                row, col = i // 3, i % 3
+            for i in range(n_features, n_rows * n_cols):
+                row, col = i // n_cols, i % n_cols
                 axes[row, col].set_visible(False)
             
             plt.tight_layout()
@@ -178,22 +198,43 @@ def plot_qq_plots(features: Dict[str, np.ndarray], output_dir: Path):
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     
+    # 条件向量特征名称
+    cond_feature_names = [
+        'del_up_mean', 'del_up_std', 'del_up_min', 'del_up_max', 'del_up_slope',
+        'loss_up_frac_cat0', 'loss_up_frac_cat1', 'loss_up_frac_cat2', 'loss_up_mode', 'loss_up_entropy',
+        'network_state_id',
+        'del_dn_mean', 'del_dn_std', 'del_dn_min', 'del_dn_max', 'del_dn_slope',
+        'loss_dn_frac_cat0', 'loss_dn_frac_cat1', 'loss_dn_frac_cat2', 'loss_dn_mode', 'loss_dn_entropy',
+        'prev_window_feature'
+    ]
+    
     # 绘制条件向量的Q-Q图
     for key, data in features.items():
         if 'cond' in key and len(data.shape) == 2:
-            n_features = min(data.shape[1], 6)  # 最多绘制6个特征
+            n_features = data.shape[1]  # 绘制所有特征
+            n_cols = 4
+            n_rows = (n_features + n_cols - 1) // n_cols
             
-            fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+            fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows))
             fig.suptitle(f'{key} - 条件向量特征 Q-Q 图', fontsize=16)
             
+            # 确保axes始终是二维数组
+            if n_rows == 1:
+                axes = axes.reshape(1, -1)
+            elif n_cols == 1:
+                axes = axes.reshape(-1, 1)
+            
             for i in range(n_features):
-                row, col = i // 3, i % 3
+                row, col = i // n_cols, i % n_cols
                 ax = axes[row, col]
                 
                 # 绘制Q-Q图
                 feature_data = data[:, i]
                 stats.probplot(feature_data, dist="norm", plot=ax)
-                ax.set_title(f'特征 {i}')
+                
+                # 获取特征名称
+                feature_name = cond_feature_names[i] if i < len(cond_feature_names) else f'特征 {i}'
+                ax.set_title(f'{feature_name}\n(索引: {i})', fontsize=10)
                 ax.grid(True, alpha=0.3)
                 
                 # 添加R²值
@@ -207,8 +248,8 @@ def plot_qq_plots(features: Dict[str, np.ndarray], output_dir: Path):
                         verticalalignment='top', bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
             
             # 隐藏多余的子图
-            for i in range(n_features, 6):
-                row, col = i // 3, i % 3
+            for i in range(n_features, n_rows * n_cols):
+                row, col = i // n_cols, i % n_cols
                 axes[row, col].set_visible(False)
             
             plt.tight_layout()
@@ -226,19 +267,38 @@ def plot_window_features(features: Dict[str, pd.DataFrame], output_dir: Path):
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     
+    # 窗口数据特征说明
+    window_feature_descriptions = {
+        'timestamp': '时间戳',
+        'del_up': '上行时延',
+        'loss_up': '上行丢包率',
+        'del_dn': '下行时延',
+        'loss_dn': '下行丢包率',
+        'gap': '时间间隔'
+    }
+    
     # 绘制窗口数据的特征分布
     for key, df in features.items():
         if 'window' in key and isinstance(df, pd.DataFrame):
             # 选择数值型列
             numeric_columns = df.select_dtypes(include=[np.number]).columns.tolist()
-            n_features = min(len(numeric_columns), 6)  # 最多绘制6个特征
+            n_features = len(numeric_columns)  # 绘制所有特征
             
             if n_features > 0:
-                fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+                n_cols = 3
+                n_rows = (n_features + n_cols - 1) // n_cols
+                
+                fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows))
                 fig.suptitle(f'{key} - 窗口数据特征分布', fontsize=16)
                 
+                # 确保axes始终是二维数组
+                if n_rows == 1:
+                    axes = axes.reshape(1, -1)
+                elif n_cols == 1:
+                    axes = axes.reshape(-1, 1)
+                
                 for i in range(n_features):
-                    row, col = i // 3, i % 3
+                    row, col = i // n_cols, i % n_cols
                     ax = axes[row, col]
                     
                     column = numeric_columns[i]
@@ -246,14 +306,17 @@ def plot_window_features(features: Dict[str, pd.DataFrame], output_dir: Path):
                     
                     # 绘制直方图
                     ax.hist(data, bins=50, alpha=0.7, color='lightgreen', edgecolor='black', linewidth=0.5)
-                    ax.set_title(f'{column}')
+                    
+                    # 获取特征描述
+                    feature_desc = window_feature_descriptions.get(column, column)
+                    ax.set_title(f'{column}\n({feature_desc})', fontsize=10)
                     ax.set_xlabel('值')
                     ax.set_ylabel('频次')
                     ax.grid(True, alpha=0.3)
                 
                 # 隐藏多余的子图
-                for i in range(n_features, 6):
-                    row, col = i // 3, i % 3
+                for i in range(n_features, n_rows * n_cols):
+                    row, col = i // n_cols, i % n_cols
                     axes[row, col].set_visible(False)
                 
                 plt.tight_layout()
