@@ -133,12 +133,15 @@ def plot_histograms(features: Dict[str, np.ndarray], output_dir: Path):
     
     # 条件向量特征名称
     cond_feature_names = [
-        'del_up_mean', 'del_up_std', 'del_up_min', 'del_up_max', 'del_up_slope',
-        'loss_up_frac_cat0', 'loss_up_frac_cat1', 'loss_up_frac_cat2', 'loss_up_mode', 'loss_up_entropy',
+        'mean_del_up', 'std_del_up', 'p95_del_up',
+        'mean_del_dn', 'std_del_dn', 'p95_del_dn',
+        'frac_cat1_up', 'frac_cat2_up_reserved', 'reserved',
+        'frac_cat1_dn', 'frac_cat2_dn_reserved',
         'network_state_id',
-        'del_dn_mean', 'del_dn_std', 'del_dn_min', 'del_dn_max', 'del_dn_slope',
-        'loss_dn_frac_cat0', 'loss_dn_frac_cat1', 'loss_dn_frac_cat2', 'loss_dn_mode', 'loss_dn_entropy',
-        'prev_window_feature'
+        'prev_mean_del_up', 'prev_std_del_up', 
+        'prev_frac_cat1_up', 'prev_frac_cat2_up_reserved', 'prev_reserved',
+        'prev_mean_del_dn', 'prev_std_del_dn',
+        'prev_frac_cat1_dn', 'prev_frac_cat2_dn_reserved'
     ]
     
     # 绘制条件向量的直方图
@@ -200,12 +203,15 @@ def plot_qq_plots(features: Dict[str, np.ndarray], output_dir: Path):
     
     # 条件向量特征名称
     cond_feature_names = [
-        'del_up_mean', 'del_up_std', 'del_up_min', 'del_up_max', 'del_up_slope',
-        'loss_up_frac_cat0', 'loss_up_frac_cat1', 'loss_up_frac_cat2', 'loss_up_mode', 'loss_up_entropy',
+        'mean_del_up', 'std_del_up', 'p95_del_up',
+        'mean_del_dn', 'std_del_dn', 'p95_del_dn',
+        'frac_cat1_up', 'frac_cat2_up_reserved', 'reserved',
+        'frac_cat1_dn', 'frac_cat2_dn_reserved',
         'network_state_id',
-        'del_dn_mean', 'del_dn_std', 'del_dn_min', 'del_dn_max', 'del_dn_slope',
-        'loss_dn_frac_cat0', 'loss_dn_frac_cat1', 'loss_dn_frac_cat2', 'loss_dn_mode', 'loss_dn_entropy',
-        'prev_window_feature'
+        'prev_mean_del_up', 'prev_std_del_up', 
+        'prev_frac_cat1_up', 'prev_frac_cat2_up_reserved', 'prev_reserved',
+        'prev_mean_del_dn', 'prev_std_del_dn',
+        'prev_frac_cat1_dn', 'prev_frac_cat2_dn_reserved'
     ]
     
     # 绘制条件向量的Q-Q图
