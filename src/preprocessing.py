@@ -520,12 +520,13 @@ def _compute_window_features(window_df):
     features[3] = np.mean(window_df['del_dn'])   # mean_del_dn
     features[4] = np.std(window_df['del_dn'])    # std_del_dn
     features[5] = np.percentile(window_df['del_dn'], 95)  # p95_del_dn
-    # 简化丢包分类，只保留cat0和cat1
-    features[6] = np.mean(window_df['loss_up'] == 0.0)    # frac_cat0_up
-    features[7] = np.mean(window_df['loss_up'] == 1.0)    # frac_cat1_up
-    features[8] = 0.0  # frac_cat2_up (废弃)
-    features[9] = np.mean(window_df['loss_dn'] == 0.0)    # frac_cat0_dn
-    features[10] = np.mean(window_df['loss_dn'] == 1.0)   # frac_cat1_dn
+    # 简化丢包分类，只保留有意义的特征
+    # 由于loss_up和loss_dn只有0和1两个值，frac_cat1等于均值
+    features[6] = np.mean(window_df['loss_up'])    # frac_cat1_up (等于均值)
+    features[7] = 0.0  # frac_cat2_up (废弃)
+    features[8] = 0.0  # 保留位置但废弃
+    features[9] = np.mean(window_df['loss_dn'])    # frac_cat1_dn (等于均值)
+    features[10] = 0.0  # frac_cat2_dn (废弃)
     # features[11] 网络状态ID将在后面设置
     features[12] = 0.0  # reserved
     
@@ -552,13 +553,13 @@ def _compute_local_features(window_df, last_n=5):
     # 局部连续性特征（10维）
     features[0] = np.mean(last_rows['del_up'])   # prev_mean_del_up
     features[1] = np.std(last_rows['del_up'])    # prev_std_del_up
-    features[2] = np.mean(last_rows['loss_up'] == 0.0)    # prev_frac_cat0_up
-    features[3] = np.mean(last_rows['loss_up'] == 1.0)    # prev_frac_cat1_up
-    features[4] = 0.0  # prev_frac_cat2_up (废弃)
+    features[2] = np.mean(last_rows['loss_up'])    # prev_frac_cat1_up (等于均值)
+    features[3] = 0.0  # prev_frac_cat2_up (废弃)
+    features[4] = 0.0  # 保留位置但废弃
     features[5] = np.mean(last_rows['del_dn'])   # prev_mean_del_dn
     features[6] = np.std(last_rows['del_dn'])    # prev_std_del_dn
-    features[7] = np.mean(last_rows['loss_dn'] == 0.0)    # prev_frac_cat0_dn
-    features[8] = np.mean(last_rows['loss_dn'] == 1.0)    # prev_frac_cat1_dn
+    features[7] = np.mean(last_rows['loss_dn'])    # prev_frac_cat1_dn (等于均值)
+    features[8] = 0.0  # prev_frac_cat2_dn (废弃)
     features[9] = 0.0  # prev_reserved
     
     return features
