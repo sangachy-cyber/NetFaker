@@ -1,4 +1,9 @@
-# main.py (v1.3)
+# preprocess.py (v1.3)
+import sys
+import os
+# 添加项目根目录到Python搜索路径
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from pathlib import Path
 import yaml, json, numpy as np, re
 from datetime import datetime, timezone

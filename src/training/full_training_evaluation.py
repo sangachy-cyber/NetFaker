@@ -210,6 +210,10 @@ def train_model(train_file, val_file=None, epochs=10, batch_size=32, learning_ra
     scheduler_config = scheduler.config
     with open(scheduler_config_path, "w") as f:
         json.dump(scheduler_config, f, indent=4)
+    
+    # 保存训练损失
+    loss_save_path = output_path / "train_losses.npy"
+    np.save(loss_save_path, np.array(train_losses))
 
     return model, scheduler_config_path  # 返回路径或 config 均可
 
