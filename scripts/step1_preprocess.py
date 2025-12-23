@@ -33,10 +33,7 @@ def main():
     with open("config.yaml") as f:
         cfg = yaml.safe_load(f)
 
-    # 自动填充 output_dir 时间戳（UTC）
-    if "<auto>" in cfg["output_dir"]:
-        auto_name = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_UTC")
-        cfg["output_dir"] = cfg["output_dir"].replace("<auto>", auto_name)
+    # 使用配置文件中指定的固定输出目录
 
     out_dir = Path(cfg["output_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)

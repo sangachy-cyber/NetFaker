@@ -100,7 +100,7 @@ def collate_fn(batch):
     }
 
 
-def train_model(train_file, val_file=None, epochs=10, batch_size=32, learning_rate=1e-4, output_dir="./output/visualization"):
+def train_model(train_file, val_file=None, epochs=10, batch_size=100, learning_rate=1e-4, output_dir="./output/visualization"):
     """训练模型"""
     # 创建输出目录
     output_path = Path(output_dir)
@@ -428,7 +428,7 @@ def main():
     parser = argparse.ArgumentParser(description="Full training and evaluation pipeline for conditional diffusion model")
     parser.add_argument("--data-dir", type=str, required=True, help="Path to preprocessed data directory")
     parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs")
-    parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
+    parser.add_argument("--batch-size", type=int, default=100, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-4, help="Learning rate")
     parser.add_argument("--num-samples", type=int, default=10, help="Number of samples to generate")
     parser.add_argument("--output-dir", type=str, default="./output/visualization", help="Output directory")
