@@ -1,17 +1,20 @@
 # preprocess.py (v1.3)
-import sys
 import os
+import sys
+
 # 添加项目根目录到Python搜索路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from pathlib import Path
-import yaml, json, numpy as np, re
+import json
+import re
 from datetime import datetime, timezone
+from pathlib import Path
+
+import numpy as np
+import yaml
 from tqdm import tqdm
+
 from src.preprocessing import (
-    WindowMetaRaw,
-    WindowMetaRenamed,
-    WindowMetaNormed,
     stage1_parse_txt,
     stage2_clean_and_truncate,
     stage3_split_and_resample,
@@ -22,19 +25,19 @@ from src.preprocessing import (
     stage8_fit_and_normalize,
     stage9_recompute_condition_vectors,
     stage10_save_artifacts,
-    stage11_generate_report
+    stage11_generate_report,
 )
 
 
 def main():
     with open("config.yaml") as f:
         cfg = yaml.safe_load(f)
-    
+
     # 自动填充 output_dir 时间戳（UTC）
     if "<auto>" in cfg["output_dir"]:
         auto_name = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_UTC")
         cfg["output_dir"] = cfg["output_dir"].replace("<auto>", auto_name)
-    
+
     out_dir = Path(cfg["output_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "assets").mkdir(parents=True, exist_ok=True)
@@ -62,13 +65,13 @@ def main():
                 df_clean,
                 max_gap_sec=cfg["max_gap_sec"],
                 min_rows=cfg["min_segment_rows"],
-                max_invalid_ratio=cfg.get("max_invalid_ratio", 0.01)
+                max_invalid_ratio=cfg.get("max_invalid_ratio", 0.01),
             )
             windows = []
             for seg in segments:
                 seg_windows = stage4_extract_windows([seg], cfg["window_size"], cfg["step_size"])
                 windows.extend(seg_windows)
-            
+
             if not windows:
                 empty_files.append(str(txt_file))
                 continue
@@ -78,7 +81,7 @@ def main():
             all_windows_meta.extend(window_metas)
 
         except Exception as e:
-            failed_files.append(f"{txt_file}: {str(e)}")
+            failed_files.append(f"{txt_file}: {e!s}")
             continue
 
     # 保存失败/空文件
@@ -91,29 +94,29 @@ def main():
 
     # 聚合为 trace 级
     traces_dict = stage6_group_by_trace_id(all_windows_meta)
-    
+
     # 按 trace 划分（整 trace 分配）
     train, val, test = stage7_assign_split_by_trace(
         traces_dict,
         train_ratio=cfg["split"]["train"],
         val_ratio=cfg["split"]["val"],
-        random_state=cfg["split"]["random_state"]
+        random_state=cfg["split"]["random_state"],
     )
-    
+
     # 归一化 + 列重命名
     renamed_datasets, assets = stage8_fit_and_normalize(
-        train, val, test, random_state=cfg["quantile_transformer"]["random_state"]
+        train, val, test, random_state=cfg["quantile_transformer"]["random_state"],
     )
 
     # 重建条件向量（基于归一化数据，标记 keep）
     final_datasets, extra_assets = stage9_recompute_condition_vectors(
-        renamed_datasets, assets, network_state_map
+        renamed_datasets, assets, network_state_map,
     )
     assets.update(extra_assets)
 
     # 保存（自动过滤 keep=False）
     stage10_save_artifacts(
-        final_datasets, assets, out_dir, dtype=getattr(np, cfg["output_dtype"])
+        final_datasets, assets, out_dir, dtype=getattr(np, cfg["output_dtype"]),
     )
 
     # 写入 schema.json
@@ -126,7 +129,7 @@ def main():
         "condition_vector_dim": 23,
         "condition_vector_structure": {
             "global_features": list(range(13)),
-            "local_features": list(range(13, 23))
+            "local_features": list(range(13, 23)),
         },
         "network_state_id_source": "filename_regex_or_default",
         "network_state_id_encoding": "integer category stored as float (e.g., 2.0)",
@@ -134,8 +137,8 @@ def main():
         "split_strategy": "Entire traces are assigned to a single split to prevent data leakage.",
         "normalization": {
             "del_up/del_dn": "QuantileTransformer(output_distribution='normal'), fitted on train set",
-            "loss_up/loss_dn": "Clipped to [0.0, 1.0], no transformation applied"
-        }
+            "loss_up/loss_dn": "Clipped to [0.0, 1.0], no transformation applied",
+        },
     }
     with open(out_dir / "meta" / "schema.json", "w") as f:
         json.dump(schema, f, indent=2)
@@ -153,7 +156,7 @@ def main():
         "processed_files": len(txt_files),
         "failed_files": len(failed_files),
         "empty_files": len(empty_files),
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
     stage11_generate_report(stats, cfg, Path(cfg["report_template"]), out_dir / "data_report.md")
 

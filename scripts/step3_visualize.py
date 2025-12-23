@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
-"""
-可视化脚本，执行可视化模块的命令行入口
+"""可视化脚本，执行可视化模块的命令行入口
 """
 
-import sys
 import os
+import sys
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 直接执行可视化模块的命令行入口

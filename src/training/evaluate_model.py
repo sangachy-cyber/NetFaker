@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
+"""分析模型训练和生成结果，生成评估报告
 """
-分析模型训练和生成结果，生成评估报告
-"""
+
+import json
+from pathlib import Path
 
 import numpy as np
-import joblib
-import matplotlib.pyplot as plt
-from pathlib import Path
-import json
 
 # 数据文件路径
 train_losses_file = Path("results/train_losses.npy")
@@ -45,24 +42,24 @@ print(f"下行时延 - 最小值: {del_dn_all.min():.6f}s, 最大值: {del_dn_al
 def load_reference_samples(file_path, num_samples=10):
     """加载参考样本数据"""
     reference_samples = []
-    
-    with open(file_path, 'r') as f:
+
+    with open(file_path) as f:
         for i, line in enumerate(f):
             if i >= num_samples:
                 break
             data = json.loads(line)
-            if data.get('keep', True):
-                window_data = data['window']
+            if data.get("keep", True):
+                window_data = data["window"]
                 features = []
                 for row in window_data[:100]:
                     features.append([
-                        row['del_up'],
-                        row['del_dn'], 
-                        row['loss_up'],
-                        row['loss_dn']
+                        row["del_up"],
+                        row["del_dn"],
+                        row["loss_up"],
+                        row["loss_dn"],
                     ])
                 reference_samples.append(features)
-    
+
     reference_samples = np.array(reference_samples)
     return reference_samples
 
@@ -91,7 +88,7 @@ print(f"下行时延均值相对差异: {dn_mean_diff:.2f}%")
 print(f"下行时延标准差相对差异: {dn_std_diff:.2f}%")
 
 # 读取调度器配置
-with open(scheduler_config_file, 'r') as f:
+with open(scheduler_config_file) as f:
     scheduler_config = json.load(f)
 
 print("\n=== 模型配置 ===")

@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 
-"""
-计算局部统计特征
+"""计算局部统计特征
 """
 
 import numpy as np
+
 
 def compute_local_stats(
     del_up_qt: np.ndarray,   # shape (5,), values in [0, 1]
     del_dn_qt: np.ndarray,   # shape (5,), values in [0, 1]
     loss_up: np.ndarray,     # shape (5,), **binary 0/1**
-    loss_dn: np.ndarray      # shape (5,), **binary 0/1**
+    loss_dn: np.ndarray,      # shape (5,), **binary 0/1**
 ) -> np.ndarray:            # shape (10,)
-    """
-    从窗口的最后5个样本计算10个局部统计数据
+    """从窗口的最后5个样本计算10个局部统计数据
     延迟输入在QuantileTransformer归一化空间中
     丢包输入必须是二进制的(0/1)
 
@@ -32,21 +30,22 @@ def compute_local_stats(
 
     Returns:
         raw_local: 10维向量，Z-score之前的值
+
     """
     # 计算上行延迟统计量
     del_up_mean = np.mean(del_up_qt)
     del_up_std = np.std(del_up_qt)
     del_up_max = np.max(del_up_qt)
-    
+
     # 计算下行延迟统计量
     del_dn_mean = np.mean(del_dn_qt)
     del_dn_std = np.std(del_dn_qt)
     del_dn_max = np.max(del_dn_qt)
-    
+
     # 计算丢包率
     loss_up_rate = np.mean(loss_up)
     loss_dn_rate = np.mean(loss_dn)
-    
+
     # 计算最大连续丢包数
     def max_consecutive(arr):
         if len(arr) == 0:
@@ -60,10 +59,10 @@ def compute_local_stats(
             else:
                 current_count = 0
         return max_count
-    
+
     max_consec_loss_up = max_consecutive(loss_up)
     max_consec_loss_dn = max_consecutive(loss_dn)
-    
+
     # 组合所有统计量
     raw_local = np.array([
         del_up_mean,
@@ -75,7 +74,7 @@ def compute_local_stats(
         loss_up_rate,
         loss_dn_rate,
         max_consec_loss_up,
-        max_consec_loss_dn
+        max_consec_loss_dn,
     ])
-    
+
     return raw_local
