@@ -256,46 +256,45 @@ def sample_and_postprocess(model, scheduler_config_path, assets_dir, num_samples
     cond_std = np.load(Path(assets_dir) / "../meta" / "cond_std.npy")
 
     # 生成条件向量
-    def generate_valid_cond_vector(train_file=None, num_network_states=8):
-        """生成有效的条件向量"""
-        if train_file and os.path.exists(train_file):
-            # 从训练数据中提取真实的条件向量分布
-            real_conds = []
-            with open(train_file) as f:
-                for line in f:
-                    data = json.loads(line)
-                    real_conds.append(data["cond"])
-                    if len(real_conds) >= 100:  # 最多使用100个真实条件向量
-                        break
-
-            if real_conds:
-                # 随机选择一个真实条件向量
-                # 训练数据中的条件向量已经是标准化的，所以可以直接使用
-                real_cond = real_conds[np.random.randint(0, len(real_conds))]
-                cond = torch.FloatTensor(real_cond)
-            else:
-                # 如果没有真实条件向量，生成随机条件向量并进行标准化
-                # 生成原始特征（22维，不包括网络状态ID）
-                raw_features = torch.randn(22)
-                # 应用Z-score标准化
-                normalized_features = (raw_features.numpy() - cond_mean) / cond_std
-                # 重新组合成23维条件向量，添加网络状态ID
-                cond = torch.zeros(23)
-                cond[:11] = torch.FloatTensor(normalized_features[:11])
-                cond[12] = torch.FloatTensor([normalized_features[11]])
-                cond[13:] = torch.FloatTensor(normalized_features[12:])
-        else:
-            # 如果没有提供训练文件，生成随机条件向量并进行标准化
-            raw_features = torch.randn(22)
-            normalized_features = (raw_features.numpy() - cond_mean) / cond_std
-            cond = torch.zeros(23)
-            cond[:11] = torch.FloatTensor(normalized_features[:11])
-            cond[12] = torch.FloatTensor([normalized_features[11]])
-            cond[13:] = torch.FloatTensor(normalized_features[12:])
-
+    def generate_valid_cond_vector(train_file, num_network_states=8):
+        """生成有效的条件向量
+        
+        Args:
+            train_file: 训练数据文件路径，必须存在且包含真实条件向量
+            num_network_states: 网络状态ID的数量
+            
+        Returns:
+            从训练数据中提取的真实条件向量
+            
+        Raises:
+            FileNotFoundError: 如果训练文件不存在
+            ValueError: 如果训练文件中没有真实条件向量
+        """
+        # 检查训练文件是否存在
+        if not os.path.exists(train_file):
+            raise FileNotFoundError(f"训练文件不存在: {train_file}")
+        
+        # 从训练数据中提取真实的条件向量分布
+        real_conds = []
+        with open(train_file) as f:
+            for line in f:
+                data = json.loads(line)
+                real_conds.append(data["cond"])
+                if len(real_conds) >= 100:  # 最多使用100个真实条件向量
+                    break
+        
+        # 检查是否提取到真实条件向量
+        if not real_conds:
+            raise ValueError(f"训练文件中没有真实条件向量: {train_file}")
+        
+        # 随机选择一个真实条件向量
+        # 训练数据中的条件向量已经是标准化的，所以可以直接使用
+        real_cond = real_conds[np.random.randint(0, len(real_conds))]
+        cond = torch.FloatTensor(real_cond)
+        
         # 确保网络状态ID在合理范围内
         cond[11] = float(np.random.randint(0, num_network_states))
-
+        
         return cond
 
     # 生成一些条件向量用于采样
