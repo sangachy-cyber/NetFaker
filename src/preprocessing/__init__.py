@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+预处理模块
+"""
+
 from typing import TypedDict, List, Dict, Tuple
 import pandas as pd
 import numpy as np
@@ -864,3 +871,6 @@ def stage11_generate_report(stats: dict, config: dict, template_path: Path, out_
     
     with open(out_path, 'w') as f:
         f.write(report_content)
+
+from .local_stats import compute_local_stats
+

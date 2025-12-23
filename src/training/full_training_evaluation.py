@@ -17,9 +17,9 @@ from src.models.conditional_diffusion import (
     PaddedConditionalUNet1D,
     DiffusionTrainer,
     DiffusionSampler,
-    PostProcessor,
-    compute_local_stats
+    PostProcessor
 )
+from src.preprocessing.local_stats import compute_local_stats
 from diffusers import DDPMScheduler
 import argparse
 import os
