@@ -122,9 +122,9 @@ def stage1_parse_txt(txt_path: Path, interval_sec: float) -> pd.DataFrame:
         timestamp = start_timestamp + i * interval_sec
         timestamps.append(timestamp)
 
-        # 计算 delay 和 loss (转换delay为秒)
-        delay_up_val = delay1 / 1000.0
-        delay_down_val = delay2 / 1000.0
+        # 计算 delay 和 loss (直接使用毫秒值)
+        delay_up_val = delay1
+        delay_down_val = delay2
 
         # loss 计算：如果带宽为0，则loss为1.0，否则为百分比/100
         loss_up_val = 1.0 if bandwidth1 == 0 else loss1_percent / 100.0
@@ -167,10 +167,9 @@ def stage2_clean_and_truncate(df: pd.DataFrame, max_delay_ms: int) -> pd.DataFra
     df.loc[(df["loss_down"] < 0) | (df["loss_down"] > 1), "loss_down"] = np.nan
 
     # 从前往后扫描，首次出现 delay_up ≥ max_delay_ms 或 delay_down ≥ max_delay_ms → 丢弃该行及之后所有行
-    max_delay_sec = max_delay_ms / 1000.0
     truncate_idx = len(df)
     for i in range(len(df)):
-        if df.iloc[i]["delay_up"] >= max_delay_sec or df.iloc[i]["delay_down"] >= max_delay_sec:
+        if df.iloc[i]["delay_up"] >= max_delay_ms or df.iloc[i]["delay_down"] >= max_delay_ms:
             truncate_idx = i
             break
 

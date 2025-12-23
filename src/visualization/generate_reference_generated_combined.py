@@ -95,11 +95,11 @@ def generate_combined_1000_points(reference_points, generated_points, output_pat
     # 数据点索引（0-999）
     point_indices = np.arange(reference_points.shape[0])
 
-    # 将时延从秒转换为毫秒
-    ref_up_delay_ms = reference_points[:, 0] * 1000
-    ref_down_delay_ms = reference_points[:, 1] * 1000
-    gen_up_delay_ms = generated_points[:, 0] * 1000
-    gen_down_delay_ms = generated_points[:, 1] * 1000
+    # 直接使用毫秒单位的时延数据
+    ref_up_delay_ms = reference_points[:, 0]
+    ref_down_delay_ms = reference_points[:, 1]
+    gen_up_delay_ms = generated_points[:, 0]
+    gen_down_delay_ms = generated_points[:, 1]
 
     # 丢包率 - 本函数仅绘制时延对比，不使用丢包率数据
 
@@ -143,11 +143,11 @@ def generate_combined_comprehensive(reference_points, generated_points, output_p
     # 数据点索引（0-999）
     point_indices = np.arange(reference_points.shape[0])
 
-    # 将时延从秒转换为毫秒
-    ref_up_delay_ms = reference_points[:, 0] * 1000
-    ref_down_delay_ms = reference_points[:, 1] * 1000
-    gen_up_delay_ms = generated_points[:, 0] * 1000
-    gen_down_delay_ms = generated_points[:, 1] * 1000
+    # 直接使用毫秒单位的时延数据
+    ref_up_delay_ms = reference_points[:, 0]
+    ref_down_delay_ms = reference_points[:, 1]
+    gen_up_delay_ms = generated_points[:, 0]
+    gen_down_delay_ms = generated_points[:, 1]
 
     # 丢包率
     ref_up_loss = reference_points[:, 2]
