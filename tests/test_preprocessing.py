@@ -6,13 +6,15 @@ import pytest
 # Add src to path for testing
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+# Import the types from preprocessing module
+from preprocessing import WindowMetaRaw, WindowMetaRenamed, WindowMetaNormed
 
 
 def test_types_defined():
     """Test that our type definitions exist"""
-    assert hasattr(sys.modules[__name__], "WindowMetaRaw")
-    assert hasattr(sys.modules[__name__], "WindowMetaRenamed")
-    assert hasattr(sys.modules[__name__], "WindowMetaNormed")
+    assert WindowMetaRaw is not None
+    assert WindowMetaRenamed is not None
+    assert WindowMetaNormed is not None
 
 
 if __name__ == "__main__":

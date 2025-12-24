@@ -16,47 +16,74 @@ plt.rcParams["axes.unicode_minus"] = False
 
 # 加载参考样本的1000个点
 def load_reference_1000_points(reference_file, qt_up, qt_down):
-    """从参考样本中加载1000个点"""
-    all_features = []
-    sample_count = 0
-
+    """从参考样本中加载1000个点，选取连续的10个窗口，每个窗口100个点
+    
+    Args:
+        reference_file: 参考样本文件路径
+        qt_up: 上行延迟反归一化器
+        qt_down: 下行延迟反归一化器
+        
+    Returns:
+        np.ndarray: 连续的1000个数据点，shape (1000, 4)
+    """
+    # 读取所有有效窗口
+    all_windows = []
     with open(reference_file) as f:
         for line in f:
             data = json.loads(line)
             if data.get("keep", True):
                 window_data = data["window"]
-                # 提取前100个时间步
-                for row in window_data[:100]:
-                    all_features.append([
-                        row["del_up"],
-                        row["del_dn"],
-                        row["loss_up"],
-                        row["loss_dn"],
-                    ])
-                    # 只提取1000个点
-                    if len(all_features) >= 1000:
-                        break
-                sample_count += 1
-                if len(all_features) >= 1000:
-                    break
-
-    reference_samples = np.array(all_features)
+                # 确保窗口数据完整（100个点）
+                if len(window_data) >= 100:
+                    # 提取窗口的前100个点
+                    window_points = []
+                    for row in window_data[:100]:
+                        window_points.append([
+                            row["del_up"],
+                            row["del_dn"],
+                            row["loss_up"],
+                            row["loss_dn"],
+                        ])
+                    all_windows.append(window_points)
+    
+    # 确保有足够的连续窗口
+    import numpy as np
+    required_windows = 10
+    if len(all_windows) < required_windows:
+        # 如果窗口数量不足，使用所有可用窗口
+        selected_windows = all_windows
+        print(f"警告：测试集中有效窗口数量不足 {required_windows} 个，仅使用 {len(all_windows)} 个")
+    else:
+        # 随机选择起始位置，确保有连续的10个窗口
+        max_start_idx = len(all_windows) - required_windows
+        start_idx = np.random.randint(0, max_start_idx + 1)
+        # 选取连续的10个窗口
+        selected_windows = all_windows[start_idx:start_idx + required_windows]
+    
+    # 将连续窗口合并为1000个点
+    reference_samples = []
+    for window in selected_windows:
+        reference_samples.extend(window)
+    
+    # 转换为numpy数组
+    reference_samples = np.array(reference_samples)
+    # 调整形状为 (1, 1000, 4)
     reference_samples = reference_samples.reshape(1, -1, 4)
 
-    # 修复参考样本中的负值（时延不可能为负）
-    reference_samples[:, :, 0] = np.maximum(reference_samples[:, :, 0], 0)  # del_up
-    reference_samples[:, :, 1] = np.maximum(reference_samples[:, :, 1], 0)  # del_dn
+    # 注意：此处的del_up和del_dn是归一化值，可以为负
+    # 反变换后会转换为实际时延，不需要在此处修复负值
 
     # 执行反归一化，将参考样本转换为实际时延值
     reference_samples_actual = reference_samples.copy()
 
     # 对每个样本进行反归一化
     for i in range(reference_samples.shape[0]):
-        # 提取延迟特征
+        # 提取延迟特征 - 这里使用的是归一化后的del_up和del_dn
+        # 注意：这些是已经归一化过的数据，需要用对应的变换器反变换
         del_up_norm = reference_samples[i, :, 0].reshape(-1, 1)
         del_dn_norm = reference_samples[i, :, 1].reshape(-1, 1)
 
-        # 执行反变换
+        # 执行反变换 - 上行时延用qt_up，下行时延用qt_down
         del_up_actual = qt_up.inverse_transform(del_up_norm).flatten()
         del_dn_actual = qt_down.inverse_transform(del_dn_norm).flatten()
 
@@ -75,8 +102,8 @@ def load_generated_1000_points(generated_file):
     generated_samples = np.load(generated_file)
     # 生成样本格式: (10, 100, 5)
     # 特征0: 时间步（0-9.9）
-    # 特征1: 上行时延（实际值，秒）
-    # 特征2: 下行时延（实际值，秒）
+    # 特征1: 上行时延（实际值，毫秒）
+    # 特征2: 下行时延（实际值，毫秒）
     # 特征3: 上行丢包率
     # 特征4: 下行丢包率
 
@@ -92,20 +119,21 @@ def load_generated_1000_points(generated_file):
 # 生成参考样本和生成样本的1000点对比图
 def generate_combined_1000_points(reference_points, generated_points, output_path):
     """生成参考样本和生成样本的1000点对比图"""
-    # 数据点索引（0-999）
-    point_indices = np.arange(reference_points.shape[0])
-
-    # 直接使用毫秒单位的时延数据
-    ref_up_delay_ms = reference_points[:, 0]
-    ref_down_delay_ms = reference_points[:, 1]
-    gen_up_delay_ms = generated_points[:, 0]
-    gen_down_delay_ms = generated_points[:, 1]
+    # 确保参考样本和生成样本点数一致
+    min_points = min(reference_points.shape[0], generated_points.shape[0])
+    point_indices = np.arange(min_points)
+    
+    # 截取相同数量的点
+    ref_up_delay_ms = reference_points[:min_points, 0]
+    ref_down_delay_ms = reference_points[:min_points, 1]
+    gen_up_delay_ms = generated_points[:min_points, 0]
+    gen_down_delay_ms = generated_points[:min_points, 1]
 
     # 丢包率 - 本函数仅绘制时延对比，不使用丢包率数据
 
     # 创建图表
     fig, axes = plt.subplots(2, 1, figsize=(20, 15))
-    fig.suptitle("参考样本与生成样本的1000个点时延趋势对比（实际尺度，时延单位：毫秒）", fontsize=20, fontweight="bold")
+    fig.suptitle(f"参考样本与生成样本的{min_points}个点时延趋势对比（实际尺度，时延单位：毫秒）", fontsize=20, fontweight="bold")
 
     # 1. 上行时延对比
     ax1 = axes[0]
@@ -140,20 +168,22 @@ def generate_combined_1000_points(reference_points, generated_points, output_pat
 # 生成包含丢包率的综合对比图
 def generate_combined_comprehensive(reference_points, generated_points, output_path):
     """生成包含丢包率的综合对比图"""
-    # 数据点索引（0-999）
-    point_indices = np.arange(reference_points.shape[0])
-
+    # 确保参考样本和生成样本点数一致
+    min_points = min(reference_points.shape[0], generated_points.shape[0])
+    point_indices = np.arange(min_points)
+    
+    # 截取相同数量的点
     # 直接使用毫秒单位的时延数据
-    ref_up_delay_ms = reference_points[:, 0]
-    ref_down_delay_ms = reference_points[:, 1]
-    gen_up_delay_ms = generated_points[:, 0]
-    gen_down_delay_ms = generated_points[:, 1]
+    ref_up_delay_ms = reference_points[:min_points, 0]
+    ref_down_delay_ms = reference_points[:min_points, 1]
+    gen_up_delay_ms = generated_points[:min_points, 0]
+    gen_down_delay_ms = generated_points[:min_points, 1]
 
     # 丢包率
-    ref_up_loss = reference_points[:, 2]
-    ref_down_loss = reference_points[:, 3]
-    gen_up_loss = generated_points[:, 2]
-    gen_down_loss = generated_points[:, 3]
+    ref_up_loss = reference_points[:min_points, 2]
+    ref_down_loss = reference_points[:min_points, 3]
+    gen_up_loss = generated_points[:min_points, 2]
+    gen_down_loss = generated_points[:min_points, 3]
 
     # 创建图表
     fig, axes = plt.subplots(4, 1, figsize=(20, 25))
@@ -188,7 +218,7 @@ def generate_combined_comprehensive(reference_points, generated_points, output_p
     ax3.set_title("上行丢包率趋势对比", fontsize=16, fontweight="bold")
     ax3.set_xlabel("数据点索引（0-999）", fontsize=12)
     ax3.set_ylabel("上行丢包率", fontsize=12)
-    ax3.set_ylim([0, 1])
+    ax3.set_ylim([-0.01, 1.01])
     ax3.grid(True, alpha=0.3)
     ax3.legend(fontsize=12)
 
@@ -199,7 +229,7 @@ def generate_combined_comprehensive(reference_points, generated_points, output_p
     ax4.set_title("下行丢包率趋势对比", fontsize=16, fontweight="bold")
     ax4.set_xlabel("数据点索引（0-999）", fontsize=12)
     ax4.set_ylabel("下行丢包率", fontsize=12)
-    ax4.set_ylim([0, 1])
+    ax4.set_ylim([-0.01, 1.01])
     ax4.grid(True, alpha=0.3)
     ax4.legend(fontsize=12)
 

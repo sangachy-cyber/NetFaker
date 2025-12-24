@@ -114,25 +114,25 @@ def main() -> None:
     parser.add_argument(
         "--reference-file",
         type=str,
-        default="output/run_20251223_020748_UTC/datasets/train.jsonl",
+        default="./output/datasets/test.jsonl",
         help="参考样本文件路径",
     )
     parser.add_argument(
         "--generated-file",
         type=str,
-        default="output/run_20251223_020748_UTC/visualization/generated_samples.npy",
+        default="./output/visualization/generated_samples.npy",
         help="生成样本文件路径",
     )
     parser.add_argument(
         "--assets-dir",
         type=str,
-        default="output/run_20251223_020748_UTC/assets",
+        default="./output/assets",
         help="资源文件目录",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="output/run_20251223_020748_UTC/visualization",
+        default="./output/visualization",
         help="输出目录",
     )
     parser.add_argument("--all", action="store_true", help="生成所有图表")

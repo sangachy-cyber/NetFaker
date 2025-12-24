@@ -34,9 +34,9 @@ def generate_1000_points_trend(generated_samples, output_path):
     # 数据点索引（0-999）
     point_indices = np.arange(all_points.shape[0])
 
-    # 将时延从秒转换为毫秒
-    up_delay_ms = all_points[:, 1] * 1000
-    down_delay_ms = all_points[:, 2] * 1000
+    # 时延数据已经是毫秒单位
+    up_delay_ms = all_points[:, 1]
+    down_delay_ms = all_points[:, 2]
 
     # 创建图表
     fig, axes = plt.subplots(2, 1, figsize=(20, 15))

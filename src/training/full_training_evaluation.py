@@ -365,9 +365,9 @@ def sample_and_postprocess(model, scheduler_config_path, assets_dir, num_samples
 
     postprocessor = PostProcessor(qt_up, qt_dn)
 
-    # 加载条件向量标准化参数
-    cond_mean = np.load(Path(assets_dir) / "../meta" / "cond_mean.npy")
-    cond_std = np.load(Path(assets_dir) / "../meta" / "cond_std.npy")
+    # 加载条件向量标准化参数（当前未使用，保留代码用于后续扩展）
+    # cond_mean = np.load(Path(assets_dir) / "../meta" / "cond_mean.npy")
+    # cond_std = np.load(Path(assets_dir) / "../meta" / "cond_std.npy")
 
     # 生成样本
     print("Generating samples...")
@@ -500,25 +500,25 @@ def visualize_generated_samples(generated_samples_file, real_data_file, output_d
     
     # 真实数据上行丢包率分布
     real_up_unique, real_up_counts = np.unique(real_loss_up, return_counts=True)
-    print(f"真实数据上行丢包率：")
+    print("真实数据上行丢包率：")
     for value, count in zip(real_up_unique, real_up_counts):
         print(f"  {value:.6f}: {count} 次 ({count/len(real_loss_up)*100:.2f}%)")
     
     # 真实数据下行丢包率分布
     real_dn_unique, real_dn_counts = np.unique(real_loss_dn, return_counts=True)
-    print(f"真实数据下行丢包率：")
+    print("真实数据下行丢包率：")
     for value, count in zip(real_dn_unique, real_dn_counts):
         print(f"  {value:.6f}: {count} 次 ({count/len(real_loss_dn)*100:.2f}%)")
     
     # 生成数据上行丢包率分布
     gen_up_unique, gen_up_counts = np.unique(generated_loss_up, return_counts=True)
-    print(f"生成数据上行丢包率：")
+    print("生成数据上行丢包率：")
     for value, count in zip(gen_up_unique, gen_up_counts):
         print(f"  {value:.6f}: {count} 次 ({count/len(generated_loss_up)*100:.2f}%)")
     
     # 生成数据下行丢包率分布
     gen_dn_unique, gen_dn_counts = np.unique(generated_loss_dn, return_counts=True)
-    print(f"生成数据下行丢包率：")
+    print("生成数据下行丢包率：")
     for value, count in zip(gen_dn_unique, gen_dn_counts):
         print(f"  {value:.6f}: {count} 次 ({count/len(generated_loss_dn)*100:.2f}%)")
     
@@ -829,26 +829,26 @@ def analyze_test_set_stats(test_file):
     print(f"无效样本数 (keep=False): {total_samples - valid_samples}")
     print(f"有效样本比例: {valid_samples / total_samples:.2%}")
     
-    print(f"\n网络状态分布:")
+    print("\n网络状态分布:")
     for state, count in sorted(network_states.items()):
         print(f"  状态 {state}: {count} 样本 ({count / valid_samples:.2%})")
     
-    print(f"\n窗口长度统计:")
+    print("\n窗口长度统计:")
     print(f"  平均窗口长度: {avg_window_length:.2f}")
     print(f"  窗口长度标准差: {std_window_length:.2f}")
     print(f"  最小窗口长度: {min(window_lengths) if window_lengths else 0}")
     print(f"  最大窗口长度: {max(window_lengths) if window_lengths else 0}")
     
-    print(f"\n丢包率统计:")
+    print("\n丢包率统计:")
     print(f"  总丢包数据点: {total_loss_count}")
     print(f"  非零丢包数据点: {non_zero_loss_count}")
     print(f"  非零丢包比例: {non_zero_loss_ratio:.2%}")
     
-    print(f"\n条件向量结构:")
-    print(f"  条件向量维度: 23")
-    print(f"  - 全局特征: 13个 (0-12)")
-    print(f"  - 网络状态ID: 1个 (11)")
-    print(f"  - 局部特征: 10个 (13-22)")
+    print("\n条件向量结构:")
+    print("  条件向量维度: 23")
+    print("  - 全局特征: 13个 (0-12)")
+    print("  - 网络状态ID: 1个 (11)")
+    print("  - 局部特征: 10个 (13-22)")
 
 
 if __name__ == "__main__":
