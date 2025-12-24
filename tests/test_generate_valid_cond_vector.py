@@ -72,7 +72,7 @@ def test_valid_train_file(valid_train_file):
         pytest.skip("有效训练文件不存在，跳过测试")
     
     # 直接测试generate_valid_cond_vector函数
-    cond_vector, window_data = generate_valid_cond_vector(valid_train_file)
+    cond_vector, window_data, _ = generate_valid_cond_vector(valid_train_file)
     assert cond_vector is not None
     assert cond_vector.shape == (23,)  # 条件向量应该是23维的
     assert isinstance(window_data, list)  # 窗口数据应该是列表类型
@@ -81,7 +81,7 @@ def test_valid_train_file(valid_train_file):
 def test_valid_temp_file(temp_valid_file):
     """测试使用有效的临时训练文件时是否成功生成条件向量"""
     # 直接测试generate_valid_cond_vector函数
-    cond_vector, window_data = generate_valid_cond_vector(temp_valid_file)
+    cond_vector, window_data, _ = generate_valid_cond_vector(temp_valid_file)
     assert cond_vector is not None
     assert cond_vector.shape == (23,)  # 条件向量应该是23维的
     assert isinstance(window_data, list)  # 窗口数据应该是列表类型

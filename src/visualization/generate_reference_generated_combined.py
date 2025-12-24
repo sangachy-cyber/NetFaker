@@ -26,13 +26,15 @@ def load_reference_1000_points(reference_file, qt_up, qt_down):
     Returns:
         np.ndarray: 连续的1000个数据点，shape (1000, 4)
     """
-    # 读取所有有效窗口
+    # 读取所有有效窗口及其起始时间
     all_windows = []
+    all_start_times = []
     with open(reference_file) as f:
         for line in f:
             data = json.loads(line)
             if data.get("keep", True):
                 window_data = data["window"]
+                start_time = data["start_time"]
                 # 确保窗口数据完整（100个点）
                 if len(window_data) >= 100:
                     # 提取窗口的前100个点
@@ -45,6 +47,7 @@ def load_reference_1000_points(reference_file, qt_up, qt_down):
                             row["loss_dn"],
                         ])
                     all_windows.append(window_points)
+                    all_start_times.append(start_time)
     
     # 确保有足够的连续窗口
     import numpy as np
@@ -121,7 +124,10 @@ def generate_combined_1000_points(reference_points, generated_points, output_pat
     """生成参考样本和生成样本的1000点对比图"""
     # 确保参考样本和生成样本点数一致
     min_points = min(reference_points.shape[0], generated_points.shape[0])
-    point_indices = np.arange(min_points)
+    
+    # 为参考样本和生成样本生成相同的时间索引
+    # 假设每个点间隔0.1秒，总时长100秒（1000点）
+    time_seconds = np.arange(min_points) * 0.1
     
     # 截取相同数量的点
     ref_up_delay_ms = reference_points[:min_points, 0]
@@ -137,10 +143,10 @@ def generate_combined_1000_points(reference_points, generated_points, output_pat
 
     # 1. 上行时延对比
     ax1 = axes[0]
-    ax1.plot(point_indices, ref_up_delay_ms, color="blue", linewidth=1, alpha=0.8, label="参考样本")
-    ax1.plot(point_indices, gen_up_delay_ms, color="orange", linewidth=1, alpha=0.8, label="生成样本")
+    ax1.plot(time_seconds, ref_up_delay_ms, color="blue", linewidth=1, alpha=0.8, label="参考样本")
+    ax1.plot(time_seconds, gen_up_delay_ms, color="orange", linewidth=1, alpha=0.8, label="生成样本")
     ax1.set_title("上行时延趋势对比", fontsize=16, fontweight="bold")
-    ax1.set_xlabel("数据点索引（0-999）", fontsize=12)
+    ax1.set_xlabel("时间 (秒)", fontsize=12)
     ax1.set_ylabel("上行时延 (毫秒)", fontsize=12)
     ax1.grid(True, alpha=0.3)
     ax1.axhline(y=20, color="red", linestyle="--", linewidth=1.5, label="20ms阈值")
@@ -148,10 +154,10 @@ def generate_combined_1000_points(reference_points, generated_points, output_pat
 
     # 2. 下行时延对比
     ax2 = axes[1]
-    ax2.plot(point_indices, ref_down_delay_ms, color="green", linewidth=1, alpha=0.8, label="参考样本")
-    ax2.plot(point_indices, gen_down_delay_ms, color="purple", linewidth=1, alpha=0.8, label="生成样本")
+    ax2.plot(time_seconds, ref_down_delay_ms, color="green", linewidth=1, alpha=0.8, label="参考样本")
+    ax2.plot(time_seconds, gen_down_delay_ms, color="purple", linewidth=1, alpha=0.8, label="生成样本")
     ax2.set_title("下行时延趋势对比", fontsize=16, fontweight="bold")
-    ax2.set_xlabel("数据点索引（0-999）", fontsize=12)
+    ax2.set_xlabel("时间 (秒)", fontsize=12)
     ax2.set_ylabel("下行时延 (毫秒)", fontsize=12)
     ax2.grid(True, alpha=0.3)
     ax2.axhline(y=20, color="red", linestyle="--", linewidth=1.5, label="20ms阈值")
@@ -170,7 +176,10 @@ def generate_combined_comprehensive(reference_points, generated_points, output_p
     """生成包含丢包率的综合对比图"""
     # 确保参考样本和生成样本点数一致
     min_points = min(reference_points.shape[0], generated_points.shape[0])
-    point_indices = np.arange(min_points)
+    
+    # 为参考样本和生成样本生成相同的时间索引
+    # 假设每个点间隔0.1秒，总时长100秒（1000点）
+    time_seconds = np.arange(min_points) * 0.1
     
     # 截取相同数量的点
     # 直接使用毫秒单位的时延数据
@@ -191,10 +200,10 @@ def generate_combined_comprehensive(reference_points, generated_points, output_p
 
     # 1. 上行时延对比
     ax1 = axes[0]
-    ax1.plot(point_indices, ref_up_delay_ms, color="blue", linewidth=1, alpha=0.8, label="参考样本")
-    ax1.plot(point_indices, gen_up_delay_ms, color="orange", linewidth=1, alpha=0.8, label="生成样本")
+    ax1.plot(time_seconds, ref_up_delay_ms, color="blue", linewidth=1, alpha=0.8, label="参考样本")
+    ax1.plot(time_seconds, gen_up_delay_ms, color="orange", linewidth=1, alpha=0.8, label="生成样本")
     ax1.set_title("上行时延趋势对比（毫秒）", fontsize=16, fontweight="bold")
-    ax1.set_xlabel("数据点索引（0-999）", fontsize=12)
+    ax1.set_xlabel("时间 (秒)", fontsize=12)
     ax1.set_ylabel("上行时延 (毫秒)", fontsize=12)
     ax1.grid(True, alpha=0.3)
     ax1.axhline(y=20, color="red", linestyle="--", linewidth=1.5, label="20ms阈值")
@@ -202,10 +211,10 @@ def generate_combined_comprehensive(reference_points, generated_points, output_p
 
     # 2. 下行时延对比
     ax2 = axes[1]
-    ax2.plot(point_indices, ref_down_delay_ms, color="green", linewidth=1, alpha=0.8, label="参考样本")
-    ax2.plot(point_indices, gen_down_delay_ms, color="purple", linewidth=1, alpha=0.8, label="生成样本")
+    ax2.plot(time_seconds, ref_down_delay_ms, color="green", linewidth=1, alpha=0.8, label="参考样本")
+    ax2.plot(time_seconds, gen_down_delay_ms, color="purple", linewidth=1, alpha=0.8, label="生成样本")
     ax2.set_title("下行时延趋势对比（毫秒）", fontsize=16, fontweight="bold")
-    ax2.set_xlabel("数据点索引（0-999）", fontsize=12)
+    ax2.set_xlabel("时间 (秒)", fontsize=12)
     ax2.set_ylabel("下行时延 (毫秒)", fontsize=12)
     ax2.grid(True, alpha=0.3)
     ax2.axhline(y=20, color="red", linestyle="--", linewidth=1.5, label="20ms阈值")
@@ -213,10 +222,10 @@ def generate_combined_comprehensive(reference_points, generated_points, output_p
 
     # 3. 上行丢包率对比
     ax3 = axes[2]
-    ax3.plot(point_indices, ref_up_loss, color="blue", linewidth=1, alpha=0.8, label="参考样本")
-    ax3.plot(point_indices, gen_up_loss, color="orange", linewidth=1, alpha=0.8, label="生成样本")
+    ax3.plot(time_seconds, ref_up_loss, color="blue", linewidth=1, alpha=0.8, label="参考样本")
+    ax3.plot(time_seconds, gen_up_loss, color="orange", linewidth=1, alpha=0.8, label="生成样本")
     ax3.set_title("上行丢包率趋势对比", fontsize=16, fontweight="bold")
-    ax3.set_xlabel("数据点索引（0-999）", fontsize=12)
+    ax3.set_xlabel("时间 (秒)", fontsize=12)
     ax3.set_ylabel("上行丢包率", fontsize=12)
     ax3.set_ylim([-0.01, 1.01])
     ax3.grid(True, alpha=0.3)
@@ -224,10 +233,10 @@ def generate_combined_comprehensive(reference_points, generated_points, output_p
 
     # 4. 下行丢包率对比
     ax4 = axes[3]
-    ax4.plot(point_indices, ref_down_loss, color="green", linewidth=1, alpha=0.8, label="参考样本")
-    ax4.plot(point_indices, gen_down_loss, color="purple", linewidth=1, alpha=0.8, label="生成样本")
+    ax4.plot(time_seconds, ref_down_loss, color="green", linewidth=1, alpha=0.8, label="参考样本")
+    ax4.plot(time_seconds, gen_down_loss, color="purple", linewidth=1, alpha=0.8, label="生成样本")
     ax4.set_title("下行丢包率趋势对比", fontsize=16, fontweight="bold")
-    ax4.set_xlabel("数据点索引（0-999）", fontsize=12)
+    ax4.set_xlabel("时间 (秒)", fontsize=12)
     ax4.set_ylabel("下行丢包率", fontsize=12)
     ax4.set_ylim([-0.01, 1.01])
     ax4.grid(True, alpha=0.3)

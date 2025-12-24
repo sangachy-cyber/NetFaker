@@ -522,12 +522,14 @@ def _compute_window_features(window_df):
     features[5] = np.std(window_df["del_dn"])    # std_del_dn
     features[6] = np.percentile(window_df["del_dn"], 1)  # p1_del_dn
     features[7] = np.percentile(window_df["del_dn"], 99)  # p99_del_dn
+    
+    # 新增：range特征
+    features[8] = features[3] - features[2]  # range_up = p99_up - p1_up
+    features[9] = features[7] - features[6]  # range_dn = p99_dn - p1_dn
     # 简化丢包分类，只保留有意义的特征
     # 由于loss_up和loss_dn只有0和1两个值，frac_cat1等于均值
-    features[8] = np.mean(window_df["loss_up"])    # frac_cat1_up (等于均值)
-    features[9] = np.mean(window_df["loss_dn"])    # frac_cat1_dn (等于均值)
-    features[10] = 0.0  # reserved1
-    # features[11] 网络状态ID将在后面设置
+    features[10] = np.mean(window_df["loss_up"])    # frac_cat1_up (等于均值)
+    features[11] = np.mean(window_df["loss_dn"])    # frac_cat1_dn (等于均值) - 后续会被网络状态ID覆盖
     features[12] = 0.0  # reserved2
 
     return features

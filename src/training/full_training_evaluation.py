@@ -6,6 +6,7 @@
 
 import argparse
 import json
+import joblib
 import os
 import warnings
 from pathlib import Path
@@ -18,10 +19,12 @@ from scipy import stats
 from torch.utils.data import DataLoader, Dataset
 
 from src.models.conditional_diffusion import (
-    DiffusionSampler,
-    DiffusionTrainer,
     PaddedConditionalUNet1D,
     PostProcessor,
+)
+from src.models.conditional_flow import (
+    ConditionalFlowModel,
+    FlowSampler,
 )
 
 warnings.filterwarnings("ignore")
@@ -43,8 +46,6 @@ def generate_valid_cond_vector(train_file, num_network_states=8, num_consecutive
         ValueError: 如果训练文件中没有真实条件向量
         KeyError: 如果训练文件中的数据没有'cond'字段
     """
-    import os
-    import numpy as np
     # 检查训练文件是否存在
     if not os.path.exists(train_file):
         raise FileNotFoundError(f"训练文件不存在: {train_file}")
@@ -152,21 +153,13 @@ def collate_fn(batch):
     windows = torch.stack([item["window"] for item in batch])
     conds = torch.stack([item["cond"] for item in batch])
 
-    # 在索引11位置插入网络状态ID（默认为0）
-    cond_with_state = []
-    for cond in conds:
-        # 在索引11位置插入0.0作为网络状态ID
-        new_cond = torch.cat([cond[:11], torch.tensor([0.0]), cond[11:]])
-        cond_with_state.append(new_cond)
-    conds_with_state = torch.stack(cond_with_state)
-
     return {
         "window": windows,
-        "cond": conds_with_state,
+        "cond": conds,
     }
 
 
-def train_model(train_file, val_file=None, epochs=10, batch_size=100, learning_rate=1e-4, output_dir="./output/visualization"):
+def train_model(train_file, val_file=None, epochs=10, batch_size=100, learning_rate=1e-4, output_dir="./output/visualization", backbone_type="tsdiff"):
     """训练模型"""
     # 创建输出目录
     output_path = Path(output_dir)
@@ -201,25 +194,16 @@ def train_model(train_file, val_file=None, epochs=10, batch_size=100, learning_r
         device = torch.device("cpu")
     print(f"Using device: {device}")
 
-    # 创建模型和调度器
-    model = PaddedConditionalUNet1D().to(device)
-    # 确保调度器配置正确，与模型输出类型匹配
-    # 使用cosine调度和fixed_small方差类型，增强对合理波动的建模能力
-    scheduler = DDPMScheduler(
-        num_train_timesteps=1000,
-        beta_start=0.0001,
-        beta_end=0.02,
-        beta_schedule="squaredcos_cap_v2",  # cosine schedule，前期加更多噪
-        variance_type="fixed_small",         # 更稳定
-        prediction_type="sample",  # 修改为sample模式，与训练目标一致
-        clip_sample=False,  # 不裁剪样本以保持数据分布
-    )
-
-    # 创建训练器
-    trainer = DiffusionTrainer(model, scheduler, device=device, patience=5)
+    # 创建 Rectified Flow 模型，使用指定的骨干网络
+    model = ConditionalFlowModel(device=device, backbone_type=backbone_type)
 
     # 设置优化器
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
+    # 早停参数
+    patience = 5
+    best_val_loss = float("inf")
+    epochs_without_improvement = 0
 
     # 记录训练损失
     train_losses = []
@@ -233,7 +217,7 @@ def train_model(train_file, val_file=None, epochs=10, batch_size=100, learning_r
 
         for batch in train_loader:
             # 执行训练步骤
-            loss = trainer.train_step(batch)
+            loss = model.train_step(batch)
 
             # 反向传播
             optimizer.zero_grad()
@@ -256,7 +240,7 @@ def train_model(train_file, val_file=None, epochs=10, batch_size=100, learning_r
             val_total_loss = 0
             val_num_batches = 0
             for val_batch in val_loader:
-                val_loss = trainer.validation_step(val_batch)
+                val_loss = model.validation_step(val_batch)
                 val_total_loss += val_loss.item()
                 val_num_batches += 1
                 val_losses.append(val_loss.item())
@@ -265,7 +249,13 @@ def train_model(train_file, val_file=None, epochs=10, batch_size=100, learning_r
             print(f"Epoch {epoch+1}/{epochs} Validation Loss: {val_avg_loss:.4f}")
 
             # 检查早停条件
-            if trainer.check_early_stopping(val_avg_loss):
+            if val_avg_loss < best_val_loss:
+                best_val_loss = val_avg_loss
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+
+            if epochs_without_improvement >= patience:
                 print(f"Early stopping at epoch {epoch+1}")
                 break
 
@@ -273,17 +263,11 @@ def train_model(train_file, val_file=None, epochs=10, batch_size=100, learning_r
     model_save_path = output_path / "trained_model.pth"
     torch.save(model.state_dict(), model_save_path)
 
-    # ✅ 保存 scheduler config（不是 state_dict！）
-    scheduler_config_path = output_path / "scheduler_config.json"
-    scheduler_config = scheduler.config
-    with open(scheduler_config_path, "w") as f:
-        json.dump(scheduler_config, f, indent=4)
-
     # 保存训练损失
     loss_save_path = output_path / "train_losses.npy"
     np.save(loss_save_path, np.array(train_losses))
 
-    return model, scheduler_config_path  # 返回路径或 config 均可
+    return model
 
 
 def visualize_training_losses(losses_file, output_dir="./output/visualization"):
@@ -336,12 +320,11 @@ def get_initial_cond_vector(test_file, train_file=None):
         return cond, None, [cond]
 
 
-def sample_and_postprocess(model, scheduler_config_path, assets_dir, num_samples=10, num_windows_per_sample=1, output_dir="./output/visualization", device="cpu", test_file=None, train_file=None, guidance_scale=1.0):
+def sample_and_postprocess(model, assets_dir, num_samples=10, num_windows_per_sample=1, output_dir="./output/visualization", device="cpu", test_file=None, train_file=None, guidance_scale=1.0):
     """采样并后处理生成的数据
     
     Args:
         model: 训练好的模型
-        scheduler_config_path: 调度器配置文件路径
         assets_dir: 资产文件目录
         num_samples: 生成的样本数量
         num_windows_per_sample: 每个样本包含的窗口数量
@@ -349,17 +332,14 @@ def sample_and_postprocess(model, scheduler_config_path, assets_dir, num_samples
         device: 设备
         test_file: 测试数据文件路径，用于获取参考样本
         train_file: 训练数据文件路径，仅在测试集不可用时作为备选
+        guidance_scale: 条件增强比例
         
     Returns:
         np.ndarray: 生成的样本数据
     """
-    with open(scheduler_config_path) as f:
-        scheduler_config = json.load(f)
+    # 使用 Rectified Flow 采样器
+    sampler = FlowSampler(model, device)
 
-    sampling_scheduler = DDPMScheduler.from_config(scheduler_config)
-    sampler = DiffusionSampler(model, sampling_scheduler, device)
-
-    import joblib
     qt_up = joblib.load(Path(assets_dir) / "qt_up.pkl")
     qt_dn = joblib.load(Path(assets_dir) / "qt_down.pkl")
 
@@ -372,6 +352,7 @@ def sample_and_postprocess(model, scheduler_config_path, assets_dir, num_samples
     # 生成样本
     print("Generating samples...")
     all_generated_samples = []
+    all_conds = []  # 收集所有使用的条件向量，用于计算超限比例
     
     for sample_idx in range(num_samples):
         print(f"\n生成样本 {sample_idx+1}/{num_samples}...")
@@ -386,13 +367,15 @@ def sample_and_postprocess(model, scheduler_config_path, assets_dir, num_samples
             # 使用真实的条件向量
             cond = consecutive_conds[window_idx % len(consecutive_conds)]
             cond_tensor = cond.unsqueeze(0).to(device)
-            generated_sample = sampler.sample(cond_tensor, num_inference_steps=100, guidance_scale=guidance_scale)  # 按照要求使用100步推理
+            generated_sample = sampler.sample(cond_tensor, num_inference_steps=100, guidance_scale=guidance_scale)  # 使用100步推理，确保轨迹完整
             processed_sample = postprocessor.postprocess(
-                generated_sample, base_time=window_idx * 10.0
+                generated_sample, base_time=window_idx * 10.0,
+                cond=cond_tensor  # 将条件向量传入，用于soft clamp
             )
             
             # 添加到结果列表
             all_windows.append(processed_sample)
+            all_conds.append(cond.cpu().numpy())  # 保存条件向量
         
         # 拼接长序列
         long_sample = np.concatenate(all_windows, axis=1)
@@ -401,6 +384,73 @@ def sample_and_postprocess(model, scheduler_config_path, assets_dir, num_samples
     # 合并所有生成的样本
     final_samples = np.concatenate(all_generated_samples, axis=0)
     print(f"\n生成的样本总形状: {final_samples.shape}")
+
+    # 计算超限比例
+    print("\n计算超限比例...")
+    
+    # 收集所有使用的条件向量，用于计算超限比例
+    # 从训练数据文件中获取真实条件向量和窗口数据，用于计算超限比例
+    real_conds = []
+    real_windows = []
+    if train_file and os.path.exists(train_file):
+        with open(train_file) as f:
+            for line in f:
+                data = json.loads(line)
+                if data.get("keep", True) and "window" in data and "cond" in data:
+                    real_windows.append(data["window"])
+                    real_conds.append(data["cond"])
+    
+    # 从测试数据文件中获取真实条件向量和窗口数据，用于计算超限比例
+    if test_file and os.path.exists(test_file):
+        with open(test_file) as f:
+            for line in f:
+                data = json.loads(line)
+                if data.get("keep", True) and "window" in data and "cond" in data:
+                    real_windows.append(data["window"])
+                    real_conds.append(data["cond"])
+    
+    real_conds = np.array(real_conds)  # (B, 23)
+    
+    # 注意：final_samples的形状是(num_samples, num_windows_per_sample*window_size, 5)
+    # 我们需要将其转换为(B, 100, 5)的形状，其中B=num_samples*num_windows_per_sample
+    final_samples_reshaped = final_samples.reshape(-1, 100, 5)  # (B, 100, 5)
+    gen_up = final_samples_reshaped[:, :, 1]  # (B, 100)，提取上行延迟（反归一化后，ms）
+    
+    # 确保real_conds的数量大于等于gen_up的数量
+    if len(real_conds) < len(gen_up):
+        # 如果真实条件向量数量不足，重复使用
+        num_repeats = (len(gen_up) + len(real_conds) - 1) // len(real_conds)
+        real_conds = np.tile(real_conds, (num_repeats, 1))[:len(gen_up)]
+    else:
+        real_conds = real_conds[:len(gen_up)]
+    
+    # 计算真实数据的反归一化p99值
+    # 直接使用条件向量中的p99值，这是预处理时已经计算好的准确值
+    # 从条件向量中获取归一化的p99值
+    p99_norm = real_conds[:, 2]
+    # 反归一化
+    true_p99_raw = qt_up.inverse_transform(p99_norm.reshape(-1, 1)).flatten()
+    
+    # 确保真实p99值数量足够
+    if len(true_p99_raw) < len(gen_up):
+        # 如果真实p99值数量不足，重复使用
+        num_repeats = (len(gen_up) + len(true_p99_raw) - 1) // len(true_p99_raw)
+        true_p99_raw = np.tile(true_p99_raw, num_repeats)[:len(gen_up)]
+    else:
+        true_p99_raw = true_p99_raw[:len(gen_up)]
+    
+    # 计算超限比例：生成的上行延迟 > 真实p99值 * 1.1
+    over_limit_ratio = np.mean(gen_up > true_p99_raw[:, None] * 1.1)
+    
+    print(f"生成数据（反归一化后）的平均上行延迟：{np.mean(gen_up):.2f} ms")
+    print(f"真实数据（反归一化后）的平均p99值：{np.mean(true_p99_raw):.2f} ms")
+    print(f"允许的上限：真实p99值 * 1.1 = {np.mean(true_p99_raw * 1.1):.2f} ms")
+    print(f"超限比例: {over_limit_ratio:.2%}")
+    
+    if over_limit_ratio > 0.05:
+        print("💡 警告：超限比例 > 5%，说明模型确实'学不会控制上限'，需要干预。")
+    else:
+        print("✅ 超限比例 <= 5%，模型能够较好地控制上限。")
 
     # 保存生成的样本
     output_path = Path(output_dir)
@@ -683,7 +733,10 @@ def main():
     parser.add_argument("--num-windows-per-sample", type=int, default=10, help="Number of windows per sample for long sequence generation")
     parser.add_argument("--output-dir", type=str, default="./output/visualization", help="Output directory")
     parser.add_argument("--guidance-scale", type=float, default=1.0, 
-                        help="条件增强比例，用于放大p99分位数，增强尖峰信号")
+                        help="条件增强比例，固定为1.0以保持宽波动，避免峰值过高")
+    parser.add_argument("--backbone-type", type=str, default="tsdiff", 
+                        choices=["tsdiff", "unet"],
+                        help="Backbone network type: 'tsdiff' for TSDiff (MLP) or 'unet' for UNet1D")
 
     args = parser.parse_args()
 
@@ -704,13 +757,14 @@ def main():
 
     # 训练模型
     print("Starting model training...")
-    model, scheduler_config_path = train_model(
+    model = train_model(
         train_file=train_file,
         val_file=val_file,
         epochs=args.epochs,
         batch_size=args.batch_size,
         learning_rate=args.lr,
         output_dir=args.output_dir,
+        backbone_type=args.backbone_type,
     )
 
     # 可视化训练损失
@@ -721,7 +775,7 @@ def main():
     # 采样和后处理
     print("Sampling and post-processing...")
     sample_and_postprocess(
-        model, scheduler_config_path, assets_dir,
+        model, assets_dir,
         num_samples=args.num_samples,
         guidance_scale=args.guidance_scale,
         num_windows_per_sample=args.num_windows_per_sample,

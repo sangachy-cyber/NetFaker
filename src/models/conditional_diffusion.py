@@ -76,7 +76,10 @@ class PaddedConditionalUNet1D(nn.Module):
         }
         self.unet = UNet1DModel(**unet_config)
 
-    def forward(self, sample: torch.Tensor, timestep, cond: torch.Tensor = None):
+    def forward(self, sample: torch.Tensor, timestep=None, times=None, cond: torch.Tensor = None):
+        # 兼容 Rectified Flow 的 times 参数
+        if timestep is None and times is not None:
+            timestep = times
         B, C, L = sample.shape
         if self.target_length != L:
             raise ValueError(f"输入长度必须为 {self.target_length}，得到了 {L}")
@@ -475,12 +478,13 @@ class PostProcessor:
         self.qt_dn = qt_dn
         self.threshold = threshold
 
-    def postprocess(self, sample: torch.Tensor, base_time: float = 0.0) -> np.ndarray:
+    def postprocess(self, sample: torch.Tensor, base_time: float = 0.0, cond: torch.Tensor = None) -> np.ndarray:
         """后处理生成的样本.
 
         Args:
             sample: 生成的样本 (B, 4, 100)
             base_time: 基础时间戳
+            cond: 条件向量 (B, 23)，当前未使用
 
         Returns:
             处理后的轨迹数据 (B, 100, 5)
