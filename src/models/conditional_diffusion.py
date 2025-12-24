@@ -95,8 +95,9 @@ class PaddedConditionalUNet1D(nn.Module):
         if cond is not None:
             # 分割条件
             global_part = torch.cat([cond[:, :11], cond[:, 12:13]], dim=-1)  # (B, 12)
-            local_part = cond[:, 13:23]                                      # (B, 10)
-            cont = torch.cat([global_part, local_part], dim=-1)             # (B, 22)
+            # 忽略局部特征，使用零向量替代
+            local_part = torch.zeros_like(cond[:, 13:23])  # (B, 10)，使用零向量
+            cont = torch.cat([global_part, local_part], dim=-1)  # (B, 22)
 
             # 处理离散状态
             state_id_raw = cond[:, 11]
@@ -198,15 +199,69 @@ class DiffusionTrainer:
         # 模型预测（预测原始数据而不是噪声）
         model_pred = self.model(noisy_samples, timesteps, cond)
 
-        # 计算损失 - 目标是原始数据而不是噪声
-        loss = F.mse_loss(model_pred, clean_sample)
-
+        def charbonnier_loss(pred, target, eps=1e-6):
+            """Charbonnier Loss，对outlier更敏感，能更好地保留尖峰信号"""
+            diff = pred - target
+            loss = torch.sqrt(diff * diff + eps)
+            return loss.mean()
+        
+        def local_std_loss(pred, target, window_size=10):
+            """局部标准差一致性损失，增强对合理波动的建模能力
+            
+            Args:
+                pred: 预测值 (B, C, L)
+                target: 目标值 (B, C, L)
+                window_size: 滑动窗口大小
+                
+            Returns:
+                局部标准差损失值
+            """
+            # 计算滑动窗口 std，避免使用MPS不支持的unfold操作
+            B, C, L = pred.shape
+            num_windows = L - window_size + 1
+            
+            # 初始化结果张量
+            pred_std = torch.zeros(B, C, num_windows, device=pred.device)
+            target_std = torch.zeros(B, C, num_windows, device=target.device)
+            
+            # 手动计算滑动窗口标准差
+            for i in range(num_windows):
+                pred_window = pred[:, :, i:i+window_size]
+                target_window = target[:, :, i:i+window_size]
+                
+                pred_std[:, :, i] = pred_window.std(dim=-1)
+                target_std[:, :, i] = target_window.std(dim=-1)
+            
+            return F.mse_loss(pred_std, target_std)
+        
+        # 分离延迟和丢包通道
+        model_pred_delay = model_pred[:, :2, :]  # 前2通道：上行时延、下行时延
+        model_pred_loss = model_pred[:, 2:, :]   # 后2通道：上行丢包率、下行丢包率
+        clean_sample_delay = clean_sample[:, :2, :]
+        clean_sample_loss = clean_sample[:, 2:, :]
+        
+        # 为丢包通道分配更高的权重，提升模型对丢包率的拟合能力
+        # 延迟通道权重: 1.0
+        # 丢包通道权重: 10.0（根据建议增加，强调丢包学习，提高模型对0/1分布的拟合能力）
+        delay_weight = 1.0
+        loss_weight = 10.0
+        local_std_weight = 0.1
+        
+        # 计算加权 Charbonnier 损失，替代 MSE 损失，更好地保留尖峰
+        loss_delay = charbonnier_loss(model_pred_delay, clean_sample_delay) * delay_weight
+        loss_loss = charbonnier_loss(model_pred_loss, clean_sample_loss) * loss_weight
+        
+        # 计算局部标准差一致性损失，增强对合理波动的建模能力
+        loss_local_std = local_std_loss(model_pred_delay, clean_sample_delay, window_size=10) * local_std_weight
+        
+        total_loss = loss_delay + loss_loss + loss_local_std
+        
         # 添加调试信息
-        if torch.isnan(loss):
+        if torch.isnan(total_loss):
             print(f"Clean sample range: {clean_sample.min().item():.4f} ~ {clean_sample.max().item():.4f}")
             print(f"Model pred range: {model_pred.min().item():.4f} ~ {model_pred.max().item():.4f}")
-
-        return loss
+        
+        return total_loss
 
     def validation_step(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
         """执行一个验证步骤
@@ -239,9 +294,61 @@ class DiffusionTrainer:
             # 模型预测（预测原始数据而不是噪声）
             model_pred = self.model(noisy_samples, timesteps, cond)
 
-            # 计算损失 - 目标是原始数据而不是噪声
-            loss = F.mse_loss(model_pred, clean_sample)
-
+            def charbonnier_loss(pred, target, eps=1e-6):
+                """Charbonnier Loss，对outlier更敏感，能更好地保留尖峰信号"""
+                diff = pred - target
+                loss = torch.sqrt(diff * diff + eps)
+                return loss.mean()
+            
+            def local_std_loss(pred, target, window_size=10):
+                """局部标准差一致性损失，增强对合理波动的建模能力
+                
+                Args:
+                    pred: 预测值 (B, C, L)
+                    target: 目标值 (B, C, L)
+                    window_size: 滑动窗口大小
+                    
+                Returns:
+                    局部标准差损失值
+                """
+                # 计算滑动窗口 std，避免使用MPS不支持的unfold操作
+                B, C, L = pred.shape
+                num_windows = L - window_size + 1
+                
+                # 初始化结果张量
+                pred_std = torch.zeros(B, C, num_windows, device=pred.device)
+                target_std = torch.zeros(B, C, num_windows, device=target.device)
+                
+                # 手动计算滑动窗口标准差
+                for i in range(num_windows):
+                    pred_window = pred[:, :, i:i+window_size]
+                    target_window = target[:, :, i:i+window_size]
+                    
+                    pred_std[:, :, i] = pred_window.std(dim=-1)
+                    target_std[:, :, i] = target_window.std(dim=-1)
+                
+                return F.mse_loss(pred_std, target_std)
+            
+            # 分离延迟和丢包通道
+            model_pred_delay = model_pred[:, :2, :]  # 前2通道：上行时延、下行时延
+            model_pred_loss = model_pred[:, 2:, :]   # 后2通道：上行丢包率、下行丢包率
+            clean_sample_delay = clean_sample[:, :2, :]
+            clean_sample_loss = clean_sample[:, 2:, :]
+            
+            # 为丢包通道分配更高的权重，提升模型对丢包率的拟合能力
+            delay_weight = 1.0
+            loss_weight = 2.0
+            local_std_weight = 0.1
+            
+            # 计算加权 Charbonnier 损失，替代 MSE 损失，更好地保留尖峰
+            loss_delay = charbonnier_loss(model_pred_delay, clean_sample_delay) * delay_weight
+            loss_loss = charbonnier_loss(model_pred_loss, clean_sample_loss) * loss_weight
+            
+            # 计算局部标准差一致性损失，增强对合理波动的建模能力
+            loss_local_std = local_std_loss(model_pred_delay, clean_sample_delay, window_size=10) * local_std_weight
+            
+            loss = loss_delay + loss_loss + loss_local_std
+            
             # 添加调试信息
             if torch.isnan(loss):
                 print(f"Val Clean sample range: {clean_sample.min().item():.4f} ~ {clean_sample.max().item():.4f}")
@@ -299,17 +406,25 @@ class DiffusionSampler:
                 )
         self.device = device
 
-    def sample(self, cond: torch.Tensor, num_inference_steps: int = 1000) -> torch.Tensor:
+    def sample(self, cond: torch.Tensor, num_inference_steps: int = 1000, guidance_scale: float = 1.0) -> torch.Tensor:
         """从条件向量生成新样本.
 
         Args:
             cond: 条件向量 (B, 23)
             num_inference_steps: 推理步数
+            guidance_scale: 条件增强比例，用于放大p99分位数，增强尖峰信号
 
         Returns:
             生成的样本 (B, 4, 100)
 
         """
+        # 条件增强：放大p99分位数
+        if guidance_scale != 1.0:
+            cond_aug = cond.clone()
+            cond_aug[:, 3] *= guidance_scale  # p99_del_up
+            cond_aug[:, 7] *= guidance_scale  # p99_del_dn
+            cond = cond_aug
+            
         # 确保条件向量在正确的设备上
         cond = cond.to(self.device)
 
@@ -389,7 +504,7 @@ class PostProcessor:
             del_up_ms = self.qt_up.inverse_transform(del_up_norm.reshape(-1, 1)).flatten()
             del_dn_ms = self.qt_dn.inverse_transform(del_dn_norm.reshape(-1, 1)).flatten()
 
-            # 二值化丢包数据
+            # 二值化丢包数据，仅根据模型预测结果生成，不添加任何人工丢包
             loss_up_bin = (loss_up_norm > self.threshold).astype(float)
             loss_dn_bin = (loss_dn_norm > self.threshold).astype(float)
 

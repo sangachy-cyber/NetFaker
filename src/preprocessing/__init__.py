@@ -527,19 +527,19 @@ def _compute_window_features(window_df):
     # 全局目标特征（13维中的前13个）
     features[0] = np.mean(window_df["del_up"])   # mean_del_up
     features[1] = np.std(window_df["del_up"])    # std_del_up
-    features[2] = np.percentile(window_df["del_up"], 95)  # p95_del_up
-    features[3] = np.mean(window_df["del_dn"])   # mean_del_dn
-    features[4] = np.std(window_df["del_dn"])    # std_del_dn
-    features[5] = np.percentile(window_df["del_dn"], 95)  # p95_del_dn
+    features[2] = np.percentile(window_df["del_up"], 1)  # p1_del_up
+    features[3] = np.percentile(window_df["del_up"], 99)  # p99_del_up
+    features[4] = np.mean(window_df["del_dn"])   # mean_del_dn
+    features[5] = np.std(window_df["del_dn"])    # std_del_dn
+    features[6] = np.percentile(window_df["del_dn"], 1)  # p1_del_dn
+    features[7] = np.percentile(window_df["del_dn"], 99)  # p99_del_dn
     # 简化丢包分类，只保留有意义的特征
     # 由于loss_up和loss_dn只有0和1两个值，frac_cat1等于均值
-    features[6] = np.mean(window_df["loss_up"])    # frac_cat1_up (等于均值)
-    features[7] = 0.0  # frac_cat2_up (废弃)
-    features[8] = 0.0  # 保留位置但废弃
+    features[8] = np.mean(window_df["loss_up"])    # frac_cat1_up (等于均值)
     features[9] = np.mean(window_df["loss_dn"])    # frac_cat1_dn (等于均值)
-    features[10] = 0.0  # frac_cat2_dn (废弃)
+    features[10] = 0.0  # reserved1
     # features[11] 网络状态ID将在后面设置
-    features[12] = 0.0  # reserved
+    features[12] = 0.0  # reserved2
 
     return features
 def _compute_local_features(window_df, last_n=5):
@@ -553,27 +553,8 @@ def _compute_local_features(window_df, last_n=5):
         10维局部特征数组
 
     """
-    if len(window_df) < last_n:
-        # 如果窗口行数不足，使用全部数据并发出警告
-        last_rows = window_df
-    else:
-        last_rows = window_df.tail(last_n)
-
-    features = np.zeros(10)
-
-    # 局部连续性特征（10维）
-    features[0] = np.mean(last_rows["del_up"])   # prev_mean_del_up
-    features[1] = np.std(last_rows["del_up"])    # prev_std_del_up
-    features[2] = np.mean(last_rows["loss_up"])    # prev_frac_cat1_up (等于均值)
-    features[3] = 0.0  # prev_frac_cat2_up (废弃)
-    features[4] = 0.0  # 保留位置但废弃
-    features[5] = np.mean(last_rows["del_dn"])   # prev_mean_del_dn
-    features[6] = np.std(last_rows["del_dn"])    # prev_std_del_dn
-    features[7] = np.mean(last_rows["loss_dn"])    # prev_frac_cat1_dn (等于均值)
-    features[8] = 0.0  # prev_frac_cat2_dn (废弃)
-    features[9] = 0.0  # prev_reserved
-
-    return features
+    # 忽略局部特征，直接返回零向量
+    return np.zeros(10)
 
 
 def stage9_recompute_condition_vectors(    datasets: Dict[str, List[WindowMetaRenamed]],

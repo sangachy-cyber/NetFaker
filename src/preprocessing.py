@@ -110,9 +110,9 @@ def stage1_parse_txt(txt_path: Path, interval_sec: float) -> pd.DataFrame:
         timestamp = start_timestamp + i * interval_sec
         timestamps.append(timestamp)
 
-        # 计算 delay 和 loss (转换delay为秒)
-        delay_up_val = delay1 / 1000.0
-        delay_down_val = delay2 / 1000.0
+        # 计算 delay 和 loss (delay保持毫秒单位)
+        delay_up_val = delay1  # 直接使用毫秒单位，不转换为秒
+        delay_down_val = delay2  # 直接使用毫秒单位，不转换为秒
 
         # loss 计算：如果带宽为0，则loss为1.0，否则为百分比/100
         loss_up_val = 1.0 if bandwidth1 == 0 else loss1_percent / 100.0
@@ -155,10 +155,10 @@ def stage2_clean_and_truncate(df: pd.DataFrame, max_delay_ms: int) -> pd.DataFra
     df.loc[(df["loss_down"] < 0) | (df["loss_down"] > 1), "loss_down"] = np.nan
 
     # 从前往后扫描，首次出现 delay_up ≥ max_delay_ms 或 delay_down ≥ max_delay_ms → 丢弃该行及之后所有行
-    max_delay_sec = max_delay_ms / 1000.0
+    # 注意：现在delay值已经是毫秒单位，直接与max_delay_ms比较
     truncate_idx = len(df)
     for i in range(len(df)):
-        if df.iloc[i]["delay_up"] >= max_delay_sec or df.iloc[i]["delay_down"] >= max_delay_sec:
+        if df.iloc[i]["delay_up"] >= max_delay_ms or df.iloc[i]["delay_down"] >= max_delay_ms:
             truncate_idx = i
             break
 
@@ -516,19 +516,19 @@ def _compute_window_features(window_df):
     # 全局目标特征（13维中的前13个）
     features[0] = np.mean(window_df["del_up"])   # mean_del_up
     features[1] = np.std(window_df["del_up"])    # std_del_up
-    features[2] = np.percentile(window_df["del_up"], 95)  # p95_del_up
-    features[3] = np.mean(window_df["del_dn"])   # mean_del_dn
-    features[4] = np.std(window_df["del_dn"])    # std_del_dn
-    features[5] = np.percentile(window_df["del_dn"], 95)  # p95_del_dn
+    features[2] = np.percentile(window_df["del_up"], 1)  # p1_del_up
+    features[3] = np.percentile(window_df["del_up"], 99)  # p99_del_up
+    features[4] = np.mean(window_df["del_dn"])   # mean_del_dn
+    features[5] = np.std(window_df["del_dn"])    # std_del_dn
+    features[6] = np.percentile(window_df["del_dn"], 1)  # p1_del_dn
+    features[7] = np.percentile(window_df["del_dn"], 99)  # p99_del_dn
     # 简化丢包分类，只保留有意义的特征
     # 由于loss_up和loss_dn只有0和1两个值，frac_cat1等于均值
-    features[6] = np.mean(window_df["loss_up"])    # frac_cat1_up (等于均值)
-    features[7] = 0.0  # frac_cat2_up (废弃)
-    features[8] = 0.0  # 保留位置但废弃
+    features[8] = np.mean(window_df["loss_up"])    # frac_cat1_up (等于均值)
     features[9] = np.mean(window_df["loss_dn"])    # frac_cat1_dn (等于均值)
-    features[10] = 0.0  # frac_cat2_dn (废弃)
+    features[10] = 0.0  # reserved1
     # features[11] 网络状态ID将在后面设置
-    features[12] = 0.0  # reserved
+    features[12] = 0.0  # reserved2
 
     return features
 def _compute_local_features(window_df, last_n=5):
@@ -542,27 +542,8 @@ def _compute_local_features(window_df, last_n=5):
         10维局部特征数组
 
     """
-    if len(window_df) < last_n:
-        # 如果窗口行数不足，使用全部数据并发出警告
-        last_rows = window_df
-    else:
-        last_rows = window_df.tail(last_n)
-
-    features = np.zeros(10)
-
-    # 局部连续性特征（10维）
-    features[0] = np.mean(last_rows["del_up"])   # prev_mean_del_up
-    features[1] = np.std(last_rows["del_up"])    # prev_std_del_up
-    features[2] = np.mean(last_rows["loss_up"])    # prev_frac_cat1_up (等于均值)
-    features[3] = 0.0  # prev_frac_cat2_up (废弃)
-    features[4] = 0.0  # 保留位置但废弃
-    features[5] = np.mean(last_rows["del_dn"])   # prev_mean_del_dn
-    features[6] = np.std(last_rows["del_dn"])    # prev_std_del_dn
-    features[7] = np.mean(last_rows["loss_dn"])    # prev_frac_cat1_dn (等于均值)
-    features[8] = 0.0  # prev_frac_cat2_dn (废弃)
-    features[9] = 0.0  # prev_reserved
-
-    return features
+    # 忽略局部特征，直接返回零向量
+    return np.zeros(10)
 
 
 def stage9_recompute_condition_vectors(    datasets: Dict[str, List[WindowMetaRenamed]],
