@@ -19,6 +19,7 @@ tmp/
 # IDE配置
 .idea/
 .vscode/
+.trae/
 
 # 日志文件
 *.log
@@ -35,3 +36,6 @@ coverage.xml
 # 配置文件
 *.local
 *.secret
+
+# Python包相关
+src/netfaker.egg-info/
