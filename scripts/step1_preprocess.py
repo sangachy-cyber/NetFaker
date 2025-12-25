@@ -30,6 +30,14 @@ from src.preprocessing import (
 
 
 def main():
+    import argparse
+    
+    # 解析命令行参数
+    parser = argparse.ArgumentParser(description="数据预处理脚本")
+    parser.add_argument("--fixed-k", type=int, default=None, help="固定聚类K值，不使用自动选择")
+    args = parser.parse_args()
+    
+    # 加载配置文件
     with open("config.yaml") as f:
         cfg = yaml.safe_load(f)
 
@@ -106,15 +114,60 @@ def main():
     )
 
     # 重建条件向量（基于归一化数据，标记 keep）
+    print("\n=== 开始调用stage9_recompute_condition_vectors函数 ===")
     final_datasets, extra_assets = stage9_recompute_condition_vectors(
         renamed_datasets, assets, network_state_map,
+        fixed_k=args.fixed_k,
     )
+    
+    # 打印返回值
+    print("\n=== stage9_recompute_condition_vectors函数返回值 ===")
+    print(f"final_datasets键: {list(final_datasets.keys())}")
+    print(f"extra_assets键: {list(extra_assets.keys())}")
+    
+    # 更新assets字典
     assets.update(extra_assets)
+    
+    # 打印assets字典
+    print("\n=== 更新后的assets字典 ===")
+    print(f"assets键: {list(assets.keys())}")
+    
+    # 报告统计（仅 keep=True）
+    total_train = sum(1 for w in final_datasets["train"] if w["keep"])
+    total_val = sum(1 for w in final_datasets["val"] if w["keep"])
+    total_test = sum(1 for w in final_datasets["test"] if w["keep"])
 
     # 保存（自动过滤 keep=False）
     stage10_save_artifacts(
         final_datasets, assets, out_dir, dtype=getattr(np, cfg["output_dtype"]),
     )
+    
+    # 检查assets字典中是否包含统计信息
+    if "state_id_stats" in assets:
+        print("\n=== 预处理完成 ===")
+        print(f"总样本数: {total_train + total_val + total_test}")
+        print(f"训练集: {total_train}个样本")
+        print(f"验证集: {total_val}个样本")
+        print(f"测试集: {total_test}个样本")
+        
+        print("\n=== 网络状态ID分布统计 ===")
+        for dataset_name, stats in assets["state_id_stats"].items():
+            print(f"\n{dataset_name.upper()}集:")
+            total_samples = sum(stat["count"] for stat in stats.values())
+            print(f"  总样本数: {total_samples}")
+            print(f"  状态ID分布:")
+            for state_id in sorted(stats.keys()):
+                stat = stats[state_id]
+                print(f"    状态ID {state_id}: {stat['count']}个样本 ({stat['percentage']:.2f}%)")
+    else:
+        print("\n=== 预处理完成 ===")
+        print(f"总样本数: {total_train + total_val + total_test}")
+        print(f"训练集: {total_train}个样本")
+        print(f"验证集: {total_val}个样本")
+        print(f"测试集: {total_test}个样本")
+        print("\n=== 警告: 未找到网络状态ID分布统计信息 ===")
+        print(f"assets键: {list(assets.keys())}")
+        print(f"extra_assets键: {list(extra_assets.keys())}")
 
     # 写入 schema.json
     schema = {
@@ -139,11 +192,6 @@ def main():
     }
     with open(out_dir / "meta" / "schema.json", "w") as f:
         json.dump(schema, f, indent=2)
-
-    # 报告统计（仅 keep=True）
-    total_train = sum(1 for w in final_datasets["train"] if w["keep"])
-    total_val = sum(1 for w in final_datasets["val"] if w["keep"])
-    total_test = sum(1 for w in final_datasets["test"] if w["keep"])
 
     stats = {
         "total_windows": total_train + total_val + total_test,
