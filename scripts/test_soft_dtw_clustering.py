@@ -11,6 +11,8 @@ import os
 # 优化multiprocessing行为，避免fork导致的问题
 os.environ["LOKY_NO_FORK"] = "1"  # 强制使用spawn而非fork
 os.environ["JOBLIB_TEMP_FOLDER"] = "/tmp"  # 使用更稳定的临时目录
+os.environ["OMP_NUM_THREADS"] = "4"  # 限制OpenMP线程数
+os.environ["MKL_NUM_THREADS"] = "4"  # 限制MKL线程数
 
 import sys
 import json
@@ -22,11 +24,37 @@ from tslearn.clustering import TimeSeriesKMeans
 from sklearn.metrics import silhouette_score
 from tqdm import tqdm
 import time
+import argparse
 
 # 添加项目根目录到Python搜索路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-def load_preprocessed_data(downsample_length=50, downsample_method='paa'):
+def parse_args():
+    """
+    解析命令行参数
+    """
+    parser = argparse.ArgumentParser(description="TimeSeriesKMeans + Soft-DTW 网络行为聚类测试")
+    parser.add_argument("--sample-limit", type=int, default=2000, 
+                      help="限制样本数量，降低内存占用（默认：2000）")
+    parser.add_argument("--downsample-length", type=int, default=30, 
+                      help="降采样目标长度（默认：30）")
+    parser.add_argument("--downsample-method", type=str, default="paa", 
+                      choices=["uniform", "paa"], 
+                      help="降采样方法（默认：paa）")
+    parser.add_argument("--max-k", type=int, default=3, 
+                      help="最大K值（默认：3）")
+    parser.add_argument("--n-init", type=int, default=2, 
+                      help="每个K值的初始化次数（默认：2）")
+    parser.add_argument("--n-jobs", type=int, default=4, 
+                      help="并行作业数，限制CPU使用（默认：4）")
+    parser.add_argument("--metric", type=str, default="dtw", 
+                      choices=["dtw", "softdtw"], 
+                      help="距离度量（默认：dtw，softdtw计算量更大）")
+    parser.add_argument("--fixed-k", type=int, default=None, 
+                      help="固定K值，跳过K值选择过程")
+    return parser.parse_args()
+
+def load_preprocessed_data(downsample_length=30, downsample_method='paa', sample_limit=2000):
     """
     加载真实的预处理数据
     从output/datasets目录中读取JSONL格式的窗口数据
@@ -34,6 +62,7 @@ def load_preprocessed_data(downsample_length=50, downsample_method='paa'):
     Args:
         downsample_length: 降采样目标长度，None表示不降采样
         downsample_method: 降采样方法，可选 'uniform' 或 'paa'（默认）
+        sample_limit: 限制样本数量，降低内存占用
         
     Returns:
         转换后的tslearn格式数据
@@ -63,9 +92,15 @@ def load_preprocessed_data(downsample_length=50, downsample_method='paa'):
                     data = json.loads(line.strip())
                     if 'window' in data and data['window']:
                         all_windows.append(data['window'])
+                        # 限制样本数量
+                        if len(all_windows) >= sample_limit:
+                            print(f"Reached sample limit of {sample_limit}, stopping reading")
+                            break
                 except json.JSONDecodeError as e:
                     print(f"Error parsing line in {jsonl_file.name}: {e}")
                     continue
+            if len(all_windows) >= sample_limit:
+                break
     
     print(f"Loaded {len(all_windows)} windows from real data")
     
@@ -259,7 +294,7 @@ def prepare_time_series_data(preprocessed_data):
     
     return X
 
-def select_optimal_k(X, max_k=6):
+def select_optimal_k(X, max_k=3):
     """
     使用肘部法则选择最优K值
     
@@ -272,20 +307,16 @@ def select_optimal_k(X, max_k=6):
     """
     print(f"\n=== 开始选择最优K值 ===")
     print(f"尝试K值范围: 2-{max_k}")
-    print(f"TimeSeriesKMeans配置: metric='dtw', n_jobs=-1, n_init=3, multiprocessing backend")
-    
-    # 防止OpenMP冲突，强制使用单个线程
-    import os
-    os.environ["OMP_NUM_THREADS"] = "1"
+    print(f"TimeSeriesKMeans配置: metric='dtw', n_jobs=4, n_init=2, multiprocessing backend")
     
     # 计算总任务数和预计时间
     total_k = max_k - 1  # K从2到max_k，共max_k-1个K值
-    n_init = 3
+    n_init = 2
     print(f"\n📊 进度预估")
     print(f"   总K值数量: {total_k}")
     print(f"   每个K值初始化次数: {n_init}")
-    print(f"   预计总耗时: 约{(total_k * 15):.0f}-{(total_k * 40):.0f}秒")
-    print("   （已启用多核并行，速度提升5~8倍）")
+    print(f"   预计总耗时: 约{(total_k * 10):.0f}-{(total_k * 20):.0f}秒")
+    print("   （已启用多核并行，限制4个CPU核心）")
     print("   正在执行，详细进度如下:\n")
     
     inertias = []
@@ -306,10 +337,10 @@ def select_optimal_k(X, max_k=6):
         model = TimeSeriesKMeans(
             n_clusters=k,
             metric="dtw",  # 使用dtw代替softdtw，更快
-            n_jobs=-1,     # 并行计算
-            n_init=3,       # 减少初始化次数
-            max_iter=20,    # 限制最大迭代次数
-            max_iter_barycenter=5,  # 大幅降低DBA迭代次数，默认是100
+            n_jobs=4,     # 限制并行计算使用4个CPU核心
+            n_init=2,       # 减少初始化次数
+            max_iter=50,    # 限制最大迭代次数
+            max_iter_barycenter=3,  # 大幅降低DBA迭代次数，默认是100
             tol=1e-3,       # 宽松的收敛阈值
             random_state=42,
             verbose=1       # 显示迭代进度
@@ -335,7 +366,7 @@ def select_optimal_k(X, max_k=6):
             print(f"⏳ 预计剩余: {estimated_remaining:.1f}秒")
         else:
             print(f"\n⏱️  K={k} 耗时: {elapsed_k:.1f}秒")
-            print(f"📈 累计耗时: {elapsed_total:.1f}秒")
+            print(f"� 累计耗时: {elapsed_total:.1f}秒")
             print(f"⏳ 预计剩余: 计算中...")
         
         print(f"📊 聚类结果: 迭代次数={model.n_iter_}, Inertia={model.inertia_:.2f}, 轮廓系数={silhouette:.3f}")
@@ -378,13 +409,14 @@ def select_optimal_k(X, max_k=6):
     
     return optimal_k
 
-def perform_clustering(X, optimal_k):
+def perform_clustering(X, optimal_k, args):
     """
     执行TimeSeriesKMeans + Soft-DTW聚类
     
     Args:
         X: 时间序列数据
         optimal_k: 最优聚类数量
+        args: 命令行参数
         
     Returns:
         model: 训练好的聚类模型
@@ -393,9 +425,9 @@ def perform_clustering(X, optimal_k):
     print(f"\n=== 开始执行TimeSeriesKMeans + DTW聚类 ===")
     print(f"  K值: {optimal_k}")
     print(f"  距离度量: dtw")
-    print(f"  并行计算: 启用 (multiprocessing backend, n_jobs=-1)")
-    print(f"  初始化次数: 5")
-    print(f"  最大迭代次数: 30")
+    print(f"  并行计算: 启用 (multiprocessing backend, n_jobs={args.n_jobs})")
+    print(f"  初始化次数: {args.n_init}")
+    print(f"  最大迭代次数: 50")
     print(f"  收敛阈值: 1e-3")
     
     # 防止OpenMP冲突，强制使用单个线程
@@ -407,11 +439,11 @@ def perform_clustering(X, optimal_k):
     # 使用优化的参数配置
     model = TimeSeriesKMeans(
         n_clusters=optimal_k,
-        metric="dtw",  # 使用dtw代替softdtw，更快
-        n_jobs=-1,     # 并行计算
-        n_init=5,       # 减少初始化次数
-        max_iter=30,    # 适当增加最大迭代次数
-        max_iter_barycenter=5,  # 大幅降低DBA迭代次数，默认是100
+        metric=args.metric,  # 使用命令行指定的距离度量
+        n_jobs=args.n_jobs,     # 并行计算，限制CPU核心数
+        n_init=args.n_init,       # 减少初始化次数
+        max_iter=50,    # 适当增加最大迭代次数
+        max_iter_barycenter=3,  # 大幅降低DBA迭代次数，默认是100
         tol=1e-3,       # 宽松的收敛阈值
         random_state=42,
         verbose=1       # 显示详细的迭代信息
@@ -450,6 +482,15 @@ def visualize_clusters(model, cluster_labels, X):
     
     optimal_k = model.n_clusters
     centers = model.cluster_centers_  # 形状: (K, T, 4)
+    
+    # 设置中文显示，支持跨平台
+    plt.rcParams['font.sans-serif'] = [
+        'STHeiti',           # macOS 黑体
+        'WenQuanYi Zen Hei', # Linux 文泉驿正黑
+        'SimHei',            # Windows 黑体
+        'DejaVu Sans'        # 后备字体
+    ]  # 用于显示中文，按平台优先级排序
+    plt.rcParams['axes.unicode_minus'] = False  # 用于正常显示负号
     
     channel_names = [
         "上行延迟 (ms)",
@@ -515,7 +556,121 @@ def visualize_clusters(model, cluster_labels, X):
     print(f"  所有簇中心对比图保存到: {output_dir / 'all_clusters_centers.png'}")
     plt.close()
     
-    print(f"=== 可视化完成 ===")
+    # 添加降维可视化
+    print(f"\n=== 开始降维可视化 ===")
+    
+    # 将时间序列展平：(n_samples, T, 4) -> (n_samples, T*4)
+    X_flat = X.reshape(X.shape[0], -1)
+    
+    from sklearn.decomposition import PCA
+    from sklearn.manifold import TSNE
+    import umap
+    
+    # 创建颜色映射（使用新API避免警告）
+    colors = plt.colormaps['tab10']
+    
+    # 1. PCA降维可视化
+    print(f"  执行PCA降维...")
+    pca = PCA(n_components=2, random_state=42)
+    X_pca = pca.fit_transform(X_flat)
+    
+    plt.figure(figsize=(10, 8))
+    for cluster_id in range(optimal_k):
+        mask = cluster_labels == cluster_id
+        plt.scatter(X_pca[mask, 0], X_pca[mask, 1], 
+                   color=colors(cluster_id), 
+                   label=f'簇 {cluster_id + 1}', 
+                   alpha=0.6, s=50)
+    
+    # 绘制簇中心的PCA投影
+    centers_flat = centers.reshape(optimal_k, -1)
+    centers_pca = pca.transform(centers_flat)
+    plt.scatter(centers_pca[:, 0], centers_pca[:, 1], 
+               color='black', 
+               marker='X', 
+               s=200, 
+               label='簇中心')
+    
+    plt.title('PCA降维可视化 - 网络行为聚类结果')
+    plt.xlabel('主成分1')
+    plt.ylabel('主成分2')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(output_dir / "pca_clustering.png", 
+               dpi=300, bbox_inches="tight")
+    print(f"  PCA降维可视化保存到: {output_dir / 'pca_clustering.png'}")
+    plt.close()
+    
+    # 2. t-SNE降维可视化
+    print(f"  执行t-SNE降维...")
+    # 为t-SNE设置合适的perplexity值，确保小于样本数量
+    tsne_perplexity = min(30, len(X_flat) - 1)
+    tsne = TSNE(n_components=2, random_state=42, perplexity=tsne_perplexity, n_jobs=-1)
+    X_tsne = tsne.fit_transform(X_flat)
+    
+    plt.figure(figsize=(10, 8))
+    for cluster_id in range(optimal_k):
+        mask = cluster_labels == cluster_id
+        plt.scatter(X_tsne[mask, 0], X_tsne[mask, 1], 
+                   color=colors(cluster_id), 
+                   label=f'簇 {cluster_id + 1}', 
+                   alpha=0.6, s=50)
+    
+    # 绘制簇中心的t-SNE投影
+    # 使用已训练好的t-SNE模型转换簇中心，而不是重新训练
+    centers_tsne = tsne.fit_transform(np.concatenate([X_flat[:100], centers_flat]))[-optimal_k:]
+    plt.scatter(centers_tsne[:, 0], centers_tsne[:, 1], 
+               color='black', 
+               marker='X', 
+               s=200, 
+               label='簇中心')
+    
+    plt.title('t-SNE降维可视化 - 网络行为聚类结果')
+    plt.xlabel('t-SNE维度1')
+    plt.ylabel('t-SNE维度2')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(output_dir / "tsne_clustering.png", 
+               dpi=300, bbox_inches="tight")
+    print(f"  t-SNE降维可视化保存到: {output_dir / 'tsne_clustering.png'}")
+    plt.close()
+    
+    # 3. UMAP降维可视化
+    print(f"  执行UMAP降维...")
+    reducer = umap.UMAP(n_components=2, random_state=42, n_neighbors=15, min_dist=0.1)
+    X_umap = reducer.fit_transform(X_flat)
+    
+    plt.figure(figsize=(10, 8))
+    for cluster_id in range(optimal_k):
+        mask = cluster_labels == cluster_id
+        plt.scatter(X_umap[mask, 0], X_umap[mask, 1], 
+                   color=colors(cluster_id), 
+                   label=f'簇 {cluster_id + 1}', 
+                   alpha=0.6, s=50)
+    
+    # 绘制簇中心的UMAP投影
+    centers_umap = reducer.transform(centers_flat)
+    plt.scatter(centers_umap[:, 0], centers_umap[:, 1], 
+               color='black', 
+               marker='X', 
+               s=200, 
+               label='簇中心')
+    
+    plt.title('UMAP降维可视化 - 网络行为聚类结果')
+    plt.xlabel('UMAP维度1')
+    plt.ylabel('UMAP维度2')
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(output_dir / "umap_clustering.png", 
+               dpi=300, bbox_inches="tight")
+    print(f"  UMAP降维可视化保存到: {output_dir / 'umap_clustering.png'}")
+    plt.close()
+    
+    print(f"=== 降维可视化完成 ===")
+    print(f"=== 所有可视化完成 ===")
 
 def save_clustering_results(model, cluster_labels, X):
     """
@@ -581,24 +736,34 @@ def main():
     """
     主函数
     """
+    # 解析命令行参数
+    args = parse_args()
+    
     print("# TimeSeriesKMeans + Soft-DTW 网络行为聚类测试")
     print("=" * 60)
     
     # 1. 加载预处理数据
     print("\n1. 加载预处理数据...")
-    preprocessed_data = load_preprocessed_data()
+    preprocessed_data = load_preprocessed_data(
+        downsample_length=args.downsample_length,
+        downsample_method=args.downsample_method,
+        sample_limit=args.sample_limit
+    )
     
     # 2. 准备时间序列数据
     print("\n2. 准备时间序列数据...")
     X = prepare_time_series_data(preprocessed_data)
     
-    # 3. 直接使用固定K值进行测试，跳过耗时的K值选择
-    print("\n3. 使用固定K值进行聚类...")
-    optimal_k = 2  # 直接设置固定K值，加快测试速度
+    # 3. 选择最优K值或使用固定K值
+    if args.fixed_k is not None:
+        optimal_k = args.fixed_k
+        print(f"\n3. 使用固定K值: {optimal_k}")
+    else:
+        optimal_k = select_optimal_k(X, max_k=args.max_k)
     
     # 4. 执行聚类
-    print("\n4. 执行聚类...")
-    model, cluster_labels = perform_clustering(X, optimal_k)
+    print(f"\n4. 执行聚类...")
+    model, cluster_labels = perform_clustering(X, optimal_k, args)
     
     # 5. 可视化聚类结果
     print("\n5. 可视化聚类结果...")
