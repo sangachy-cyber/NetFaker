@@ -5,28 +5,11 @@ import sys
 # 添加项目根目录到Python搜索路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import json
-import re
-from datetime import datetime, timezone
 from pathlib import Path
 
-import numpy as np
 import yaml
-from tqdm import tqdm
 
-from src.preprocessing import (
-    stage1_parse_txt,
-    stage2_clean_and_truncate,
-    stage3_split_and_resample,
-    stage4_extract_windows,
-    stage5_mark_first_window,
-    stage6_group_by_trace_id,
-    stage7_assign_split_by_trace,
-    stage8_fit_and_normalize,
-    stage9_recompute_condition_vectors,
-    stage10_save_artifacts,
-    stage11_generate_report,
-)
+from src.preprocessing import PreprocessingPipeline
 
 
 def main():
@@ -34,7 +17,6 @@ def main():
     
     # 解析命令行参数
     parser = argparse.ArgumentParser(description="数据预处理脚本")
-    parser.add_argument("--fixed-k", type=int, default=None, help="固定聚类K值，不使用自动选择")
     args = parser.parse_args()
     
     # 加载配置文件
@@ -42,168 +24,39 @@ def main():
         cfg = yaml.safe_load(f)
 
     # 使用配置文件中指定的固定输出目录
-
     out_dir = Path(cfg["output_dir"])
     out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "assets").mkdir(parents=True, exist_ok=True)
-    (out_dir / "meta").mkdir(parents=True, exist_ok=True)
-
-    # 构建 network_state_map
-    pattern = cfg.get("filename_pattern", ".*_state(\\d+)\\.txt")
-    default_id = cfg.get("default_network_state_id", 0)
-
-    all_windows_meta = []
-    failed_files = []
-    empty_files = []
-
-    txt_files = list(Path(cfg["input_dir"]).glob("*.txt"))
-    network_state_map = {}
-    for txt_file in txt_files:
-        match = re.search(pattern, txt_file.name)
-        network_state_map[txt_file.stem] = int(match.group(1)) if match else default_id
-
-    for txt_file in tqdm(txt_files, desc="Processing files"):
-        try:
-            df_raw = stage1_parse_txt(txt_file, cfg["raw_interval_sec"])
-            df_clean = stage2_clean_and_truncate(df_raw, cfg["max_delay_ms"])
-            segments = stage3_split_and_resample(
-                df_clean,
-                max_gap_sec=cfg["max_gap_sec"],
-                min_rows=cfg["min_segment_rows"],
-                max_invalid_ratio=cfg.get("max_invalid_ratio", 0.01),
-            )
-            windows = []
-            for seg in segments:
-                seg_windows = stage4_extract_windows([seg], cfg["window_size"], cfg["step_size"])
-                windows.extend(seg_windows)
-
-            if not windows:
-                empty_files.append(str(txt_file))
-                continue
-
-            trace_id = txt_file.stem
-            window_metas = stage5_mark_first_window(windows, trace_id)
-            all_windows_meta.extend(window_metas)
-
-        except Exception as e:
-            failed_files.append(f"{txt_file}: {e!s}")
-            continue
-
-    # 保存失败/空文件
-    if failed_files:
-        with open(out_dir / "meta" / "failed_files.txt", "w") as f:
-            f.write("\n".join(failed_files))
-    if empty_files:
-        with open(out_dir / "meta" / "empty_files.txt", "w") as f:
-            f.write("\n".join(empty_files))
-
-    # 聚合为 trace 级
-    traces_dict = stage6_group_by_trace_id(all_windows_meta)
-
-    # 按 trace 划分（整 trace 分配）
-    train, val, test = stage7_assign_split_by_trace(
-        traces_dict,
-        train_ratio=cfg["split"]["train"],
-        val_ratio=cfg["split"]["val"],
-        random_state=cfg["split"]["random_state"],
-    )
-
-    # 归一化 + 列重命名
-    renamed_datasets, assets = stage8_fit_and_normalize(
-        train, val, test, random_state=cfg["quantile_transformer"]["random_state"],
-    )
-
-    # 重建条件向量（基于归一化数据，标记 keep）
-    print("\n=== 开始调用stage9_recompute_condition_vectors函数 ===")
-    final_datasets, extra_assets = stage9_recompute_condition_vectors(
-        renamed_datasets, assets, network_state_map,
-        fixed_k=args.fixed_k,
-    )
     
-    # 打印返回值
-    print("\n=== stage9_recompute_condition_vectors函数返回值 ===")
-    print(f"final_datasets键: {list(final_datasets.keys())}")
-    print(f"extra_assets键: {list(extra_assets.keys())}")
+    # 创建预处理流水线实例
+    pipeline = PreprocessingPipeline(cfg)
     
-    # 更新assets字典
-    assets.update(extra_assets)
+    # 执行预处理流程
+    result = pipeline.run()
     
-    # 打印assets字典
-    print("\n=== 更新后的assets字典 ===")
-    print(f"assets键: {list(assets.keys())}")
+    # 打印结果统计
+    stats = result["stats"]
+    assets = result["assets"]
     
-    # 报告统计（仅 keep=True）
-    total_train = sum(1 for w in final_datasets["train"] if w["keep"])
-    total_val = sum(1 for w in final_datasets["val"] if w["keep"])
-    total_test = sum(1 for w in final_datasets["test"] if w["keep"])
-
-    # 保存（自动过滤 keep=False）
-    stage10_save_artifacts(
-        final_datasets, assets, out_dir, dtype=getattr(np, cfg["output_dtype"]),
-    )
+    print("\n=== 预处理完成 ===")
+    print(f"总样本数: {stats['total_windows']}")
+    print(f"训练集: {stats['train_count']}个样本")
+    print(f"验证集: {stats['val_count']}个样本")
+    print(f"测试集: {stats['test_count']}个样本")
+    print(f"处理文件总数: {stats['processed_files']}")
+    print(f"失败文件数: {stats['failed_files']}")
+    print(f"空文件数: {stats['empty_files']}")
     
-    # 检查assets字典中是否包含统计信息
+    # 打印网络状态ID分布
     if "state_id_stats" in assets:
-        print("\n=== 预处理完成 ===")
-        print(f"总样本数: {total_train + total_val + total_test}")
-        print(f"训练集: {total_train}个样本")
-        print(f"验证集: {total_val}个样本")
-        print(f"测试集: {total_test}个样本")
-        
         print("\n=== 网络状态ID分布统计 ===")
-        for dataset_name, stats in assets["state_id_stats"].items():
+        for dataset_name, stats_item in assets["state_id_stats"].items():
             print(f"\n{dataset_name.upper()}集:")
-            total_samples = sum(stat["count"] for stat in stats.values())
+            total_samples = sum(stat["count"] for stat in stats_item.values())
             print(f"  总样本数: {total_samples}")
-            print(f"  状态ID分布:")
-            for state_id in sorted(stats.keys()):
-                stat = stats[state_id]
+            print("  状态ID分布:")
+            for state_id in sorted(stats_item.keys()):
+                stat = stats_item[state_id]
                 print(f"    状态ID {state_id}: {stat['count']}个样本 ({stat['percentage']:.2f}%)")
-    else:
-        print("\n=== 预处理完成 ===")
-        print(f"总样本数: {total_train + total_val + total_test}")
-        print(f"训练集: {total_train}个样本")
-        print(f"验证集: {total_val}个样本")
-        print(f"测试集: {total_test}个样本")
-        print("\n=== 警告: 未找到网络状态ID分布统计信息 ===")
-        print(f"assets键: {list(assets.keys())}")
-        print(f"extra_assets键: {list(extra_assets.keys())}")
-
-    # 写入 schema.json
-    schema = {
-        "pipeline_version": "v1.3",
-        "columns": ["timestamp", "del_up", "del_dn", "loss_up", "loss_dn"],
-        "window_size": cfg["window_size"],
-        "freq_hz": 10,
-        "normalized": True,
-        "condition_vector_dim": 23,
-        "condition_vector_structure": {
-            "global_features": list(range(13)),
-            "local_features": list(range(13, 23)),
-        },
-        "network_state_id_source": "filename_regex_or_default",
-        "network_state_id_encoding": "integer category stored as float (e.g., 2.0)",
-        "level2_normalization": "Z-score normalization applied to 22 float dimensions (indices 0–10 and 12–22), excluding the integer-encoded network_state_id at index 11.",
-        "split_strategy": "Entire traces are assigned to a single split to prevent data leakage.",
-        "normalization": {
-            "del_up/del_dn": "QuantileTransformer(output_distribution='normal'), fitted on train set",
-            "loss_up/loss_dn": "Clipped to [0.0, 1.0], no transformation applied",
-        },
-    }
-    with open(out_dir / "meta" / "schema.json", "w") as f:
-        json.dump(schema, f, indent=2)
-
-    stats = {
-        "total_windows": total_train + total_val + total_test,
-        "train_count": total_train,
-        "val_count": total_val,
-        "test_count": total_test,
-        "processed_files": len(txt_files),
-        "failed_files": len(failed_files),
-        "empty_files": len(empty_files),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-    stage11_generate_report(stats, cfg, Path(cfg["report_template"]), out_dir / "data_report.md")
 
 
 if __name__ == "__main__":
