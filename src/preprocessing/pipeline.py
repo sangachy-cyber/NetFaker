@@ -2,16 +2,20 @@ from pathlib import Path
 from typing import Dict, List, Tuple, Any
 
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 
 from .data import PreprocessingConfig, PreprocessingResult, WindowMetaNormed
 from .processing import (
     parse_txt, clean_and_truncate, split_and_resample, extract_windows,
     mark_first_window, group_by_trace_id, assign_split_by_trace,
-    fit_and_normalize, prepare_init_local_cond, prepare_norm_params
+    fit_and_normalize
 )
-from .features import compute_window_features, compute_local_features, merge_features, normalize_condition_vector
+from .features import compute_window_features, normalize_condition_vector
 from .io import DataSaver, ReportGenerator
+
+# 导入行为发现模块
+from behavior_discovery.pattern_identifier import PatternIdentifier
 
 
 class PreprocessingPipeline:
@@ -25,6 +29,8 @@ class PreprocessingPipeline:
         """
         self.config = config
         self.pipeline_version = "v1.3"
+        # 初始化行为发现模块
+        self.pattern_identifier = PatternIdentifier()
     
     def run(self) -> PreprocessingResult:
         """执行完整的预处理流程
@@ -56,13 +62,17 @@ class PreprocessingPipeline:
         failed_files = []
         empty_files = []
         
+        # 保存所有原始数据，用于行为发现
+        all_raw_data = []
+        
         for txt_file in tqdm(txt_files, desc="Processing files"):
             stats["processed_files"] += 1
             try:
                 # 阶段1-5：解析、清洗、分割、提取窗口、标记首窗
-                file_result = self._process_single_file(txt_file)
+                file_result, raw_data = self._process_single_file(txt_file)
                 if file_result:
                     all_windows_meta.extend(file_result)
+                    all_raw_data.append(raw_data)
                 else:
                     empty_files.append(str(txt_file))
                     stats["empty_files"] += 1
@@ -71,8 +81,13 @@ class PreprocessingPipeline:
                 stats["failed_files"] += 1
                 continue
         
-        # 5. 阶段6-7：分组和数据集划分
-        traces_dict = group_by_trace_id(all_windows_meta)
+        # 5. 阶段6：计算行为ID（使用原始数据，不需要归一化）
+        behavior_windows, behavior_assets = self._compute_behavior_ids(
+            {"all": all_windows_meta}, {}, network_state_map, all_raw_data
+        )
+        
+        # 6. 阶段7-8：分组和数据集划分（基于行为ID）
+        traces_dict = group_by_trace_id(behavior_windows)
         train, val, test = assign_split_by_trace(
             traces_dict,
             train_ratio=self.config["split"]["train"],
@@ -80,15 +95,15 @@ class PreprocessingPipeline:
             random_state=self.config["split"]["random_state"],
         )
         
-        # 6. 阶段8：归一化和列重命名
+        # 7. 阶段9：归一化和列重命名
         renamed_datasets, assets = fit_and_normalize(
             train, val, test, 
             random_state=self.config["quantile_transformer"]["random_state"]
         )
         
-        # 7. 阶段9：重新计算条件向量
+        # 8. 阶段10：重新计算条件向量（使用已经计算好的行为ID）
         final_datasets, extra_assets = self._recompute_condition_vectors(
-            renamed_datasets, assets, network_state_map
+            renamed_datasets, assets, network_state_map, all_raw_data
         )
         
         # 更新assets字典
@@ -100,18 +115,30 @@ class PreprocessingPipeline:
         stats["test_count"] = sum(1 for w in final_datasets["test"] if w["keep"])
         stats["total_windows"] = stats["train_count"] + stats["val_count"] + stats["test_count"]
         
-        # 9. 阶段10：保存结果
+        # 9. 优化训练数据提取：按行为类别筛选和重划分数据集
+        final_datasets, other_datasets = self._filter_and_reorganize_datasets(final_datasets, out_dir)
+        
+        # 10. 更新统计结果
+        stats["train_count"] = sum(1 for w in final_datasets["train"] if w["keep"])
+        stats["val_count"] = sum(1 for w in final_datasets["val"] if w["keep"])
+        stats["test_count"] = sum(1 for w in final_datasets["test"] if w["keep"])
+        stats["total_windows"] = stats["train_count"] + stats["val_count"] + stats["test_count"]
+        
+        # 11. 阶段10：保存结果
         saver = DataSaver(out_dir, dtype=getattr(np, self.config["output_dtype"]))
         saver.save_assets(assets)
         saver.save_dataset(final_datasets)
         saver.save_failed_files(failed_files)
         saver.save_empty_files(empty_files)
         
-        # 10. 生成schema
+        # 保存other类别数据
+        self._save_other_category(other_datasets, out_dir)
+        
+        # 12. 生成schema
         schema = self._generate_schema()
         saver.save_metadata(self.pipeline_version, schema, assets)
         
-        # 11. 阶段11：生成报告
+        # 13. 阶段11：生成报告
         report_generator = ReportGenerator()
         report_generator.generate_report(
             stats, self.config, 
@@ -126,14 +153,14 @@ class PreprocessingPipeline:
             "stats": stats
         }
     
-    def _process_single_file(self, txt_file: Path) -> List[Dict]:
+    def _process_single_file(self, txt_file: Path) -> Tuple[List[Dict], pd.DataFrame]:
         """处理单个文件
         
         Args:
             txt_file: 输入txt文件
             
         Returns:
-            窗口元数据列表，若文件为空则返回空列表
+            (窗口元数据列表, 原始数据DataFrame) 二元组，若文件为空则返回空列表和空DataFrame
         """
         # 阶段1：解析原始txt文件
         df_raw = parse_txt(txt_file, self.config["raw_interval_sec"])
@@ -153,13 +180,13 @@ class PreprocessingPipeline:
         windows = extract_windows(segments, self.config["window_size"], self.config["step_size"])
         
         if not windows:
-            return []
+            return [], df_raw
         
         # 阶段5：标记首个窗口
         trace_id = txt_file.stem
         window_metas = mark_first_window(windows, trace_id)
         
-        return window_metas
+        return window_metas, df_raw
     
     def _build_network_state_map(self, txt_files: List[Path]) -> Dict[str, int]:
         """构建网络状态映射
@@ -181,29 +208,135 @@ class PreprocessingPipeline:
         
         return network_state_map
     
+    def _compute_behavior_ids(
+        self, datasets: Dict[str, List[Dict]], assets: Dict[str, Any], network_state_map: Dict[str, int], all_raw_data: List[pd.DataFrame]
+    ) -> Tuple[List[Dict], Dict[str, Any]]:
+        """计算行为ID
+
+        Args:
+            datasets: 数据集字典
+            assets: 资源字典（可以为空）
+            network_state_map: 网络状态映射
+            all_raw_data: 所有原始数据
+            
+        Returns:
+            (behavior_windows, behavior_assets) 二元组
+        """
+        # 初始化behavior_assets，只包含必要的均值和标准差（后续会被实际值覆盖）
+        behavior_assets = {
+            "mean_loss_cat2_up": 0.5,
+            "mean_loss_cat2_dn": 0.5,
+        }
+        
+        # 收集所有窗口元数据
+        all_windows = []
+        for dataset in datasets.values():
+            all_windows.extend(dataset)
+        
+        # 执行行为发现，计算每个窗口的行为ID
+        behavior_labels = []
+        if all_windows:
+            try:
+                labels_list = []
+                
+                for window_meta in all_windows:
+                    window_df = window_meta["window"]
+                    
+                    if window_df.empty:
+                        # 空窗口标记为INVALID
+                        labels_list.append(8)
+                        continue
+                    
+                    # 确保窗口数据包含必要的列
+                    # 优先使用原始数据列
+                    if all(col in window_df.columns for col in ["delay_up_origin", "loss_up_origin", "delay_down_origin", "loss_down_origin"]):
+                        delay_col1, loss_col1, delay_col2, loss_col2 = "delay_up_origin", "loss_up_origin", "delay_down_origin", "loss_down_origin"
+                    elif all(col in window_df.columns for col in ["delay_up", "loss_up", "delay_down", "loss_down"]):
+                        delay_col1, loss_col1, delay_col2, loss_col2 = "delay_up", "loss_up", "delay_down", "loss_down"
+                    elif all(col in window_df.columns for col in ["delay_up", "loss_up", "delay_down", "loss_dn"]):
+                        delay_col1, loss_col1, delay_col2, loss_col2 = "delay_up", "loss_up", "delay_down", "loss_dn"
+                    elif all(col in window_df.columns for col in ["delay1", "loss_rate1", "delay2", "loss_rate2"]):
+                        delay_col1, loss_col1, delay_col2, loss_col2 = "delay1", "loss_rate1", "delay2", "loss_rate2"
+                    else:
+                        # 列不匹配，标记为INVALID
+                        labels_list.append(8)
+                        continue
+                    
+                    # 提取上下行数据
+                    delay_up = window_df[delay_col1].values
+                    loss_up = window_df[loss_col1].values
+                    delay_down = window_df[delay_col2].values
+                    loss_down = window_df[loss_col2].values
+                    
+                    # 计算动态阈值
+                    thresholds = {
+                        "delay_mean_low": self.pattern_identifier.DEFAULT_DELAY_MEAN_LOW,
+                        "delay_mean_high": self.pattern_identifier.DEFAULT_DELAY_MEAN_HIGH,
+                        "delay_std_high": self.pattern_identifier.DEFAULT_DELAY_STD_HIGH,
+                        "loss_mean_low": self.pattern_identifier.DEFAULT_LOSS_MEAN_LOW,
+                        "loss_mean_high": self.pattern_identifier.DEFAULT_LOSS_MEAN_HIGH,
+                        "loss_std_high": self.pattern_identifier.DEFAULT_LOSS_STD_HIGH,
+                    }
+                    
+                    # 对上下行数据分别检测行为
+                    behavior_up = self.pattern_identifier._detect_behavior_with_raw_data(delay_up, loss_up, thresholds)
+                    behavior_down = self.pattern_identifier._detect_behavior_with_raw_data(delay_down, loss_down, thresholds)
+                    
+                    # 合并上下行标签，取更严重的行为（数值更大表示更严重）
+                    merged_label = max(behavior_up, behavior_down)
+                    labels_list.append(merged_label)
+                
+                behavior_labels = labels_list
+                
+                # 计算行为统计信息
+                import numpy as np
+                behavior_assets["behavior_stats"] = self.pattern_identifier._calculate_behavior_statistics(np.array(behavior_labels))
+            except Exception as e:
+                print(f"行为发现模块执行失败，使用默认标签: {e}")
+                # 如果行为发现失败，使用默认标签
+                behavior_labels = [0] * len(all_windows)
+        
+        # 为每个窗口添加行为ID
+        behavior_windows = []
+        for i, window_meta in enumerate(all_windows):
+            if i < len(behavior_labels):
+                window_with_behavior = window_meta.copy()
+                window_with_behavior["behavior_id"] = behavior_labels[i]
+                behavior_windows.append(window_with_behavior)
+            else:
+                # 如果没有行为标签，添加默认值
+                window_with_behavior = window_meta.copy()
+                window_with_behavior["behavior_id"] = 0
+                behavior_windows.append(window_with_behavior)
+        
+        return behavior_windows, behavior_assets
+    
     def _recompute_condition_vectors(
-        self, datasets: Dict[str, List[Dict]], assets: Dict[str, Any], network_state_map: Dict[str, int]
+        self, datasets: Dict[str, List[Dict]], assets: Dict[str, Any], network_state_map: Dict[str, int], all_raw_data: List[pd.DataFrame]
     ) -> Tuple[Dict[str, List[WindowMetaNormed]], Dict[str, Any]]:
         """重新计算条件向量
-        
+
         Args:
             datasets: 重命名后的数据集
             assets: 资源字典
             network_state_map: 网络状态映射
+            all_raw_data: 所有原始数据
             
         Returns:
             (final_datasets, extra_assets) 二元组
         """
-        # 准备初始局部条件向量和标准化参数
-        train_dataset = datasets["train"]
-        init_local_cond = prepare_init_local_cond(train_dataset)
-        cond_mean, cond_std = prepare_norm_params(train_dataset)
+        # 从assets中获取delay_up和delay_down的z-score参数
+        delay_up_mean = assets["delay_up_mean"]
+        delay_up_std = assets["delay_up_std"]
+        delay_down_mean = assets["delay_down_mean"]
+        delay_down_std = assets["delay_down_std"]
         
         # 初始化extra_assets
         extra_assets = {
-            "init_local_cond": init_local_cond,
-            "cond_mean": cond_mean,
-            "cond_std": cond_std,
+            "delay_up_mean": delay_up_mean,
+            "delay_up_std": delay_up_std,
+            "delay_down_mean": delay_down_mean,
+            "delay_down_std": delay_down_std,
             "mean_loss_cat2_up": 0.5,
             "mean_loss_cat2_dn": 0.5,
             "state_id_stats": {},
@@ -213,6 +346,28 @@ class PreprocessingPipeline:
         final_datasets = {}
         state_id_stats = {}
         
+        # 收集所有窗口元数据，确保按处理顺序排列
+        all_windows_sorted = []
+        for dataset_name, dataset in datasets.items():
+            traces = group_by_trace_id(dataset)
+            # 先按trace_id排序，再按start_time排序
+            for trace_id in sorted(traces.keys()):
+                metas = traces[trace_id]
+                metas_sorted = sorted(metas, key=lambda x: x["start_time"])
+                all_windows_sorted.extend(metas_sorted)
+        
+        # 行为ID已经在之前计算过，直接从窗口元数据中获取
+        # 计算行为统计信息
+        all_behavior_ids = []
+        for window_meta in all_windows_sorted:
+            behavior_id = window_meta.get("behavior_id", 0)
+            all_behavior_ids.append(behavior_id)
+        
+        # 计算行为统计信息
+        import numpy as np
+        extra_assets["behavior_stats"] = self.pattern_identifier._calculate_behavior_statistics(np.array(all_behavior_ids))
+        
+        # 分配行为标签到各个数据集
         for dataset_name, dataset in datasets.items():
             # 按 trace_id 分组并排序
             traces = group_by_trace_id(dataset)
@@ -227,15 +382,18 @@ class PreprocessingPipeline:
             
             for trace_id, metas in traces.items():
                 for i, meta in enumerate(metas):
+                    # 直接从窗口元数据中获取行为ID
+                    network_state_id = meta.get("behavior_id", 0)
+                    
                     normed_meta = self._process_single_window(
-                        meta, i, metas, network_state_map, 
-                        init_local_cond, cond_mean, cond_std
+                        meta, i, metas, network_state_id, 
+                        delay_up_mean, delay_up_std, delay_down_mean, delay_down_std
                     )
                     normed_metas.append(normed_meta)
                     
                     # 统计state_id分布（只统计keep=True的样本）
                     if normed_meta["keep"]:
-                        dataset_state_ids.append(int(normed_meta["cond"][11]))
+                        dataset_state_ids.append(int(normed_meta["cond"][0]))
             
             final_datasets[dataset_name] = normed_metas
             
@@ -246,8 +404,8 @@ class PreprocessingPipeline:
         return final_datasets, extra_assets
     
     def _process_single_window(
-        self, meta: Dict, i: int, metas: List[Dict], network_state_map: Dict[str, int],
-        init_local_cond: np.ndarray, cond_mean: np.ndarray, cond_std: np.ndarray
+        self, meta: Dict, i: int, metas: List[Dict], network_state_id: int,
+        delay_up_mean: float, delay_up_std: float, delay_down_mean: float, delay_down_std: float
     ) -> WindowMetaNormed:
         """处理单个窗口
         
@@ -255,10 +413,11 @@ class PreprocessingPipeline:
             meta: 窗口元数据
             i: 窗口索引
             metas: 同trace的所有窗口元数据
-            network_state_map: 网络状态映射
-            init_local_cond: 初始局部条件向量
-            cond_mean: 条件向量均值
-            cond_std: 条件向量标准差
+            network_state_id: 网络状态ID（来自行为发现模块）
+            delay_up_mean: 上行延迟的z-score均值
+            delay_up_std: 上行延迟的z-score标准差
+            delay_down_mean: 下行延迟的z-score均值
+            delay_down_std: 下行延迟的z-score标准差
             
         Returns:
             归一化后的窗口元数据
@@ -271,26 +430,17 @@ class PreprocessingPipeline:
         # 下行丢包只保留0和1两个类别
         window_df.loc[window_df["loss_dn"] > 0, "loss_dn"] = 1.0
         
-        # 计算全局特征
+        # 计算全局特征（15维：1个state_id + 7个上行分位点 + 7个下行分位点）
         global_features = compute_window_features(window_df)
         
-        # 使用默认网络状态ID 0
-        network_state_id = 0
-        global_features[11] = float(network_state_id)
+        # 使用行为发现模块生成的网络状态ID，替换第0维
+        global_features[0] = float(network_state_id)
         
-        # 计算局部特征
-        if i == 0:  # 该 trace 在此数据集中的第一个窗口，视为逻辑首窗
-            local_features = init_local_cond
-        else:
-            # 使用前一个窗口的最后5行
-            prev_window_df = metas[i-1]["window"]
-            local_features = compute_local_features(prev_window_df)
+        # 直接使用全局特征作为条件向量
+        cond_vector = global_features.copy()
         
-        # 合并特征形成23维条件向量
-        cond_vector = merge_features(global_features, local_features)
-        
-        # Z-score 标准化（仅对22个float维度）
-        normalized_cond_vector = normalize_condition_vector(cond_vector, cond_mean, cond_std)
+        # Z-score 标准化（使用delay_up和delay_down的z-score参数）
+        normalized_cond_vector = normalize_condition_vector(cond_vector, delay_up_mean, delay_up_std, delay_down_mean, delay_down_std)
         
         # 构造归一化后的窗口元数据
         normed_meta: WindowMetaNormed = {
@@ -329,6 +479,196 @@ class PreprocessingPipeline:
         
         return stats
     
+    def _filter_and_reorganize_datasets(self, datasets: Dict[str, List[WindowMetaNormed]], out_dir: Path) -> Tuple[Dict[str, List[WindowMetaNormed]], List[WindowMetaNormed]]:
+        """按行为类别筛选和重划分数据集
+        
+        Args:
+            datasets: 原始数据集
+            out_dir: 输出目录
+            
+        Returns:
+            (final_datasets, other_datasets) 二元组
+        """
+        from collections import Counter
+        import json
+        
+        # 1. 收集所有窗口数据
+        all_windows = []
+        for dataset_name, windows in datasets.items():
+            all_windows.extend(windows)
+        
+        # 2. 按行为类别分组
+        behavior_groups = {}
+        for window in all_windows:
+            # 行为标签位于条件向量的第0维（索引0）
+            behavior_id = int(window['cond'][0])
+            if behavior_id not in behavior_groups:
+                behavior_groups[behavior_id] = []
+            behavior_groups[behavior_id].append(window)
+        
+        # 3. 统计每个行为类别的样本数量
+        behavior_counts = Counter()
+        for behavior_id, windows in behavior_groups.items():
+            behavior_counts[behavior_id] = sum(1 for w in windows if w['keep'])
+        
+        # 4. 筛选符合条件的行为类别（数目大于600的类别）
+        selected_behaviors = [behavior_id for behavior_id, count in behavior_counts.items() if count > 600]
+        other_behaviors = [behavior_id for behavior_id, count in behavior_counts.items() if count <= 600]
+        
+        print(f"\n=== 行为类别筛选结果 ===")
+        print(f"总行为类别数: {len(behavior_counts)}")
+        print(f"选中的行为类别: {selected_behaviors}")
+        print(f"Other类别: {other_behaviors}")
+        for behavior_id, count in sorted(behavior_counts.items(), key=lambda x: x[1], reverse=True):
+            status = "选中" if behavior_id in selected_behaviors else "Other"
+            print(f"  行为ID {behavior_id}: {count}个样本 ({status})")
+        
+        # 5. 初始化最终数据集
+        final_train = []
+        final_val = []
+        final_test = []
+        other_datasets = []
+        
+        # 6. 处理每个行为类别
+        for behavior_id, windows in behavior_groups.items():
+            # 只保留keep=True的窗口
+            valid_windows = [w for w in windows if w['keep']]
+            
+            if behavior_id in other_behaviors:
+                # 保存到other_datasets
+                other_datasets.extend(valid_windows)
+                continue
+            
+            # 按时间排序
+            sorted_windows = sorted(valid_windows, key=lambda x: x['start_time'])
+            num_windows = len(sorted_windows)
+            
+            print(f"\n处理行为ID {behavior_id}: {num_windows}个有效样本")
+            
+            # 7. 划分训练集、验证集和测试集
+            val_windows = []
+            test_windows = []
+            
+            if num_windows > 1000:
+                # 样本数大于1000：随机挑选1000个作为训练集
+                import numpy as np
+                np.random.seed(42)
+                # 随机挑选1000个样本作为训练集
+                train_indices = np.random.choice(
+                    num_windows, 
+                    size=1000, 
+                    replace=False
+                )
+                # 剩余样本的索引
+                remaining_indices = np.setdiff1d(np.arange(num_windows), train_indices)
+                
+                # 构建训练集和剩余样本
+                train_windows = [sorted_windows[i] for i in train_indices]
+                remaining_windows = [sorted_windows[i] for i in remaining_indices]
+                
+                # 从剩余样本中随机挑选100个，均分为验证集和测试集
+                if len(remaining_windows) >= 100:
+                    # 随机挑选100个样本
+                    selected_indices = np.random.choice(
+                        len(remaining_windows), 
+                        size=100, 
+                        replace=False
+                    )
+                    selected_remaining = [remaining_windows[i] for i in selected_indices]
+                    
+                    # 均分为验证集和测试集
+                    mid = len(selected_remaining) // 2
+                    val_windows = selected_remaining[:mid]
+                    test_windows = selected_remaining[mid:]
+                    print(f"  训练集: 1000个样本, 验证集: {len(val_windows)}个样本, 测试集: {len(test_windows)}个样本")
+                else:
+                    # 剩余样本不足100个，全部作为验证集
+                    val_windows = remaining_windows
+                    print(f"  训练集: 1000个样本, 验证集: {len(val_windows)}个样本, 测试集: 0个样本")
+            else:
+                # 样本数小于1000：挑选最后10个左右作为验证集和测试集
+                if num_windows >= 10:
+                    # 取最后10个样本
+                    last_10 = sorted_windows[-10:]
+                    mid = len(last_10) // 2
+                    val_windows = last_10[:mid]
+                    test_windows = last_10[mid:]
+                    # 训练集为剩下的样本
+                    train_windows = sorted_windows[:-10]
+                    print(f"  训练集: {len(train_windows)}个样本, 验证集: {len(val_windows)}个样本, 测试集: {len(test_windows)}个样本")
+                else:
+                    # 样本数不足10个，全部作为训练集
+                    train_windows = sorted_windows
+                    print(f"  训练集: {len(train_windows)}个样本, 验证集: 0个样本, 测试集: 0个样本")
+            
+            # 添加到最终数据集
+            final_train.extend(train_windows)
+            final_val.extend(val_windows)
+            final_test.extend(test_windows)
+        
+        # 8. 构建最终数据集
+        final_datasets = {
+            "train": final_train,
+            "val": final_val,
+            "test": final_test
+        }
+        
+        print(f"\n=== 最终数据集统计 ===")
+        print(f"训练集: {len(final_train)}个样本")
+        print(f"验证集: {len(final_val)}个样本")
+        print(f"测试集: {len(final_test)}个样本")
+        print(f"Other类别: {len(other_datasets)}个样本")
+        
+        return final_datasets, other_datasets
+    
+    def _save_other_category(self, other_datasets: List[WindowMetaNormed], out_dir: Path) -> None:
+        """保存other类别数据
+        
+        Args:
+            other_datasets: other类别数据
+            out_dir: 输出目录
+        """
+        import json
+        import numpy as np
+        
+        # 创建自定义JSON编码器，处理NumPy类型
+        class NumpyEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, np.integer):
+                    return int(obj)
+                elif isinstance(obj, np.floating):
+                    return float(obj)
+                elif isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                elif isinstance(obj, pd.Timestamp):
+                    return obj.timestamp()
+                return super(NumpyEncoder, self).default(obj)
+        
+        # 创建datasets目录路径
+        datasets_dir = out_dir / "datasets"
+        datasets_dir.mkdir(parents=True, exist_ok=True)
+        
+        # 创建other.jsonl文件，保存到datasets目录下
+        other_file = datasets_dir / "other.jsonl"
+        
+        # 保存数据
+        with open(other_file, "w", encoding="utf-8") as f:
+            for window in other_datasets:
+                # 转换为可序列化的格式
+                window_dict = {
+                    "trace_id": window["trace_id"],
+                    "start_time": window["start_time"],
+                    "is_first": window["is_first"],
+                    "keep": window["keep"],
+                    "cond": window["cond"],
+                    "window": window["window"].to_dict(orient="records")
+                }
+                
+                # 使用自定义编码器写入文件
+                f.write(json.dumps(window_dict, ensure_ascii=False, cls=NumpyEncoder) + "\n")
+        
+        print(f"\nOther类别数据已保存到: {other_file}")
+    
     def _generate_schema(self) -> Dict[str, Any]:
         """生成数据模式
         
@@ -346,7 +686,7 @@ class PreprocessingPipeline:
                 "global_features": list(range(13)),
                 "local_features": list(range(13, 23)),
             },
-            "network_state_id_source": "filename_regex_or_default",
+            "network_state_id_source": "behavior_discovery_module",
             "network_state_id_encoding": "integer category stored as float (e.g., 2.0)",
             "level2_normalization": "Z-score normalization applied to 22 float dimensions (indices 0–10 and 12–22), excluding the integer-encoded network_state_id at index 11.",
             "split_strategy": "Entire traces are assigned to a single split to prevent data leakage.",

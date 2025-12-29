@@ -5,7 +5,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
-from .features import compute_window_features, compute_local_features
+from .features import compute_window_features
 from sklearn.preprocessing import QuantileTransformer
 
 
@@ -480,6 +480,7 @@ def fit_and_normalize(
     """拟合并标准化数据
     
     使用训练集数据拟合QuantileTransformer，然后对所有数据集应用标准化变换。
+    对归一化后的时延数据进行z-score处理，确保统一的均值和标准差。
     
     Args:
         train: 训练集
@@ -525,15 +526,43 @@ def fit_and_normalize(
     )
     qt_down.fit(train_features[:, 1].reshape(-1, 1))
 
+    # 先对训练集应用QuantileTransformer，收集数据计算z-score的mean和std
+    train_normalized_delays_up = []
+    train_normalized_delays_down = []
+    for window_df in train_windows:
+        delays_up = qt_up.transform(window_df["delay_up_origin"].values.reshape(-1, 1)).flatten()
+        delays_down = qt_down.transform(window_df["delay_down_origin"].values.reshape(-1, 1)).flatten()
+        train_normalized_delays_up.extend(delays_up)
+        train_normalized_delays_down.extend(delays_down)
+    
+    # 计算z-score所需的均值和标准差
+    delay_up_mean = np.mean(train_normalized_delays_up)
+    delay_up_std = np.std(train_normalized_delays_up)
+    delay_down_mean = np.mean(train_normalized_delays_down)
+    delay_down_std = np.std(train_normalized_delays_down)
+    
+    # 避免除零错误
+    delay_up_std = max(delay_up_std, 1e-8)
+    delay_down_std = max(delay_down_std, 1e-8)
+
     # 处理数据集
     def process_dataset(dataset):
         renamed_metas = []
         for meta in dataset:
             window_df = meta["window"].copy()
 
-            # 使用原始延迟列进行归一化，结果保存到 delay_up/delay_down 列
-            window_df["delay_up"] = qt_up.transform(window_df["delay_up_origin"].values.reshape(-1, 1)).flatten()
-            window_df["delay_down"] = qt_down.transform(window_df["delay_down_origin"].values.reshape(-1, 1)).flatten()
+            # 使用原始延迟列进行归一化
+            normalized_up = qt_up.transform(window_df["delay_up_origin"].values.reshape(-1, 1)).flatten()
+            normalized_down = qt_down.transform(window_df["delay_down_origin"].values.reshape(-1, 1)).flatten()
+            
+            # 保存QuantileTransformer归一化结果，用于条件特征计算
+            window_df["delay_up_qt"] = normalized_up
+            window_df["delay_down_qt"] = normalized_down
+            
+            # 应用z-score标准化，用于模型训练
+            window_df["delay_up"] = (normalized_up - delay_up_mean) / delay_up_std
+            window_df["delay_down"] = (normalized_down - delay_down_mean) / delay_down_std
+            
             # 重命名loss列
             window_df = window_df.rename(columns={
                 "loss_down": "loss_dn",
@@ -566,93 +595,13 @@ def fit_and_normalize(
     assets = {
         "qt_up": qt_up,
         "qt_down": qt_down,
+        "delay_up_mean": delay_up_mean,
+        "delay_up_std": delay_up_std,
+        "delay_down_mean": delay_down_mean,
+        "delay_down_std": delay_down_std,
     }
 
     return renamed_datasets, assets
 
 
-def prepare_init_local_cond(train_dataset: List[Dict]) -> np.ndarray:
-    """准备初始局部条件向量
-    
-    Args:
-        train_dataset: 训练数据集
-        
-    Returns:
-        10维初始局部条件向量
-    """
-    # 收集训练集中所有可能作为前驱的窗口（即每个trace中除最后一个窗口外的所有窗口）
-    predecessor_windows = []
-    train_traces = {}
 
-    # 按trace_id分组
-    for meta in train_dataset:
-        trace_id = meta["trace_id"]
-        if trace_id not in train_traces:
-            train_traces[trace_id] = []
-        train_traces[trace_id].append(meta)
-
-    # 对每个trace，取除最后一个窗口外的所有窗口
-    for trace_id, metas in train_traces.items():
-        # 按 start_time 排序
-        metas_sorted = sorted(metas, key=lambda x: x["start_time"])
-        # 取除最后一个外的所有窗口
-        predecessor_metas = metas_sorted[:-1] if len(metas_sorted) > 1 else metas_sorted
-        for meta in predecessor_metas:
-            predecessor_windows.append(meta["window"])
-
-    # 计算局部特征
-    local_features_list = []
-    for window_df in predecessor_windows:
-        local_features = compute_local_features(window_df)
-        local_features_list.append(local_features)
-
-    # 计算均值作为 init_local_cond
-    if local_features_list:
-        init_local_cond = np.mean(local_features_list, axis=0)
-    else:
-        init_local_cond = np.zeros(10)
-
-    return init_local_cond
-
-
-def prepare_norm_params(train_dataset: List[Dict]) -> Tuple[np.ndarray, np.ndarray]:
-    """准备标准化参数
-    
-    Args:
-        train_dataset: 训练数据集
-        
-    Returns:
-        (cond_mean, cond_std) 二元组
-    """
-    # 计算训练集的全局特征用于标准化
-    global_features_list = []
-    local_features_list_for_norm = []
-    for meta in train_dataset:
-        if not meta["is_first"]:  # 跳过首窗口
-            global_features = compute_window_features(meta["window"])
-            # 使用默认网络状态ID 0
-            network_state_id = 0
-            global_features[11] = float(network_state_id)
-            # 只取前12维（跳过网络状态ID维度11）
-            selected_global_features = np.concatenate([global_features[:11], [global_features[12]]])
-            global_features_list.append(selected_global_features)
-
-            # 收集局部特征用于标准化
-            local_features = compute_local_features(meta["window"])
-            local_features_list_for_norm.append(local_features)
-
-    # 计算均值和标准差用于标准化（22维特征：12维全局 + 10维局部）
-    if global_features_list and local_features_list_for_norm:
-        global_features_array = np.array(global_features_list)
-        local_features_array = np.array(local_features_list_for_norm)
-        # 合并全局和局部特征用于计算标准化参数
-        all_features_for_norm = np.concatenate([global_features_array, local_features_array], axis=1)
-        cond_mean = np.mean(all_features_for_norm, axis=0)
-        cond_std = np.std(all_features_for_norm, axis=0)
-        # 避免除零错误
-        cond_std = np.where(cond_std == 0, 1.0, cond_std)
-    else:
-        cond_mean = np.zeros(22)
-        cond_std = np.ones(22)
-
-    return cond_mean, cond_std

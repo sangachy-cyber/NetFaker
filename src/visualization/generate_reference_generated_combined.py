@@ -41,11 +41,11 @@ def load_reference_1000_points(reference_file, qt_up, qt_down):
                     window_points = []
                     for row in window_data[:100]:
                         window_points.append([
-                            row["del_up"],
-                            row["del_dn"],
-                            row["loss_up"],
-                            row["loss_dn"],
-                        ])
+                                row["delay_up"],
+                                row["delay_down"],
+                                row["loss_up"],
+                                row["loss_dn"],
+                            ])
                     all_windows.append(window_points)
                     all_start_times.append(start_time)
     

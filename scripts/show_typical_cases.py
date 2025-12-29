@@ -24,7 +24,7 @@ def load_resources():
     """加载预处理过程中保存的资源文件
     
     Returns:
-        dict: 包含qt_up和qt_down的字典
+        dict: 包含qt_up、qt_down以及z-score均值和标准差的字典
     """
     assets_dir = Path("output/assets")
     
@@ -35,9 +35,19 @@ def load_resources():
     with open(assets_dir / "qt_down.pkl", "rb") as f:
         qt_down = pickle.load(f)
     
+    # 加载z-score均值和标准差
+    delay_up_mean = np.load(assets_dir / "delay_up_mean.npy").item()
+    delay_up_std = np.load(assets_dir / "delay_up_std.npy").item()
+    delay_down_mean = np.load(assets_dir / "delay_down_mean.npy").item()
+    delay_down_std = np.load(assets_dir / "delay_down_std.npy").item()
+    
     return {
         "qt_up": qt_up,
-        "qt_down": qt_down
+        "qt_down": qt_down,
+        "delay_up_mean": delay_up_mean,
+        "delay_up_std": delay_up_std,
+        "delay_down_mean": delay_down_mean,
+        "delay_down_std": delay_down_std
     }
 
 
@@ -78,21 +88,25 @@ def load_window_data():
     return window_data
 
 
-def inverse_transform_delay(delays, qt_model):
-    """对时延数据进行反归一化
+def inverse_transform_delay(delays, qt_model, mean=0.0, std=1.0):
+    """对时延数据进行反归一化，包括z-score反变换和QuantileTransformer反变换
     
     Args:
         delays: 归一化后的时延数据
         qt_model: QuantileTransformer模型
+        mean: z-score均值
+        std: z-score标准差
         
     Returns:
         np.array: 反归一化后的时延数据
     """
-    # 确保输入是二维数组
-    delays_2d = delays.reshape(-1, 1)
-    # 反归一化
+    # 1. 先进行z-score反变换
+    delays_zscore_inv = delays * std + mean
+    # 2. 确保输入是二维数组
+    delays_2d = delays_zscore_inv.reshape(-1, 1)
+    # 3. 反QuantileTransformer变换
     inverse_delays = qt_model.inverse_transform(delays_2d)
-    # 转换回一维数组
+    # 4. 转换回一维数组
     return inverse_delays.flatten()
 
 
@@ -146,8 +160,10 @@ def plot_typical_case(ax, case_data, assets, title=""):
     loss_up = window_df["loss_up"].values
     loss_dn = window_df["loss_dn"].values
     
-    inverse_del_up = inverse_transform_delay(del_up, assets["qt_up"])
-    inverse_del_dn = inverse_transform_delay(del_dn, assets["qt_down"])
+    inverse_del_up = inverse_transform_delay(del_up, assets["qt_up"], 
+                                          assets["delay_up_mean"], assets["delay_up_std"])
+    inverse_del_dn = inverse_transform_delay(del_dn, assets["qt_down"], 
+                                          assets["delay_down_mean"], assets["delay_down_std"])
     
     # 绘制上行和下行时延
     ax.plot(inverse_del_up, label="上行时延 (ms)", color="blue")

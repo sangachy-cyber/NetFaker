@@ -65,6 +65,23 @@ class DataSaver:
         if "mean_loss_cat2_dn" in assets:
             np.save(self.assets_dir / "mean_loss_cat2_dn.npy", 
                     np.array(assets["mean_loss_cat2_dn"]).astype(self.dtype))
+        
+        # 保存z-score均值和标准差
+        if "delay_up_mean" in assets:
+            np.save(self.assets_dir / "delay_up_mean.npy", 
+                    np.array(assets["delay_up_mean"]).astype(self.dtype))
+        
+        if "delay_up_std" in assets:
+            np.save(self.assets_dir / "delay_up_std.npy", 
+                    np.array(assets["delay_up_std"].astype(self.dtype)))
+        
+        if "delay_down_mean" in assets:
+            np.save(self.assets_dir / "delay_down_mean.npy", 
+                    np.array(assets["delay_down_mean"]).astype(self.dtype))
+        
+        if "delay_down_std" in assets:
+            np.save(self.assets_dir / "delay_down_std.npy", 
+                    np.array(assets["delay_down_std"].astype(self.dtype)))
     
     def save_dataset(self, datasets: Dict[str, List[Dict]]):
         """保存数据集

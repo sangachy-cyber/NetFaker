@@ -1,22 +1,37 @@
-# 弱网行为聚类：特征提取与归一化全流程规范（推荐版）
+# 网络轨迹生成：特征提取与归一化全流程规范
 
-> 🎯 目标：保留绝对延迟差异 + 抑制异常值 + 区分 4 类网络模式  
-> 🔧 原则：**不对原始延迟序列做任何 per-trace 归一化**，只对最终特征矩阵做全局鲁棒缩放
+> 🎯 目标：保留绝对延迟差异 + 抑制异常值 + 提供丰富的条件特征  
+> 🔧 原则：对延迟序列进行 QuantileTransformer 归一化后，再基于此计算条件特征
 
-## 特征清单（共 10 维，全部基于上行）
+## 特征清单（共 27 维，包含上行和下行）
 
 | 序号 | 特征名 | 来源数据 | 计算方式 | 是否需预处理 | 归一化要求 | 最终类型 | 
 |------|--------|--------|--------|------------|----------|--------| 
-| 1 | `raw_mean_delay` | 原始上行延迟序列 `delay_up` (ms) | `np.mean(delay_up)` | ❌ 否 | **RobustScaler**（全局） | 连续 | 
-| 2 | `p95_up` | 原始 `delay_up` | `np.percentile(delay_up, 95)` | ❌ 否 | **RobustScaler** | 连续 | 
-| 3 | `p1_up` | 原始 `delay_up` | `np.percentile(delay_up, 1)` | ❌ 否 | **RobustScaler** | 连续 | 
-| 4 | `std_up` | 原始 `delay_up` | `np.std(delay_up)` | ❌ 否 | **RobustScaler** | 连续 | 
-| 5 | `trend_slope_up` | 原始 `delay_up` | 线性回归斜率（ms/s） | ❌ 否 | **RobustScaler** | 连续 | 
-| 6 | `autocorr_lag5_up` | 原始 `delay_up` | `np.corrcoef(x[:-5], x[5:])[0,1]` | ❌ 否 | **RobustScaler** | 连续（[-1,1]）| 
-| 7 | `loss_up` | 上行丢包序列 `loss_up` | `np.mean(loss_up)` | ❌ 否 | **RobustScaler** | 连续（[0,1]）| 
-| 8 | `max_consec_loss_up` | `loss_up` | 最长连续丢包窗口数 → 转秒 | ✅ **log1p** | **RobustScaler** | 连续（长尾）| 
-| 9 | `max_burst_up` | `delay_up` | 最长连续高延迟段（delay > p90）→ 秒 | ✅ **log1p** | **RobustScaler** | 连续（长尾）| 
-|10 | `n_switches_up` | `delay_up` | 滑动窗口方差突变次数 | ✅ **log1p** | **RobustScaler** | 连续（长尾）| 
+| 0 | `network_state_id` | 外部提供（如文件名解析） | **由外部提供** | ❌ 否 | ❌ 无需 | 整数 | 
+| 1 | `mean_delay_up` | QuantileTransformer 归一化后的上行延迟 `delay_up_qt` | `np.mean(delay_up_qt)` | ❌ 否 | **Z-score**（使用 delay_up 的参数） | 连续 | 
+| 2 | `std_delay_up` | 归一化后的 `delay_up_qt` | `np.std(delay_up_qt)` | ❌ 否 | **Z-score** | 连续 | 
+| 3 | `p1_delay_up` | 归一化后的 `delay_up_qt` | `np.percentile(delay_up_qt, 1)` | ❌ 否 | **Z-score** | 连续 | 
+| 4 | `p5_delay_up` | 归一化后的 `delay_up_qt` | `np.percentile(delay_up_qt, 5)` | ❌ 否 | **Z-score** | 连续 | 
+| 5 | `p10_delay_up` | 归一化后的 `delay_up_qt` | `np.percentile(delay_up_qt, 10)` | ❌ 否 | **Z-score** | 连续 | 
+| 6 | `p25_delay_up` | 归一化后的 `delay_up_qt` | `np.percentile(delay_up_qt, 25)` | ❌ 否 | **Z-score** | 连续 | 
+| 7 | `p50_delay_up` | 归一化后的 `delay_up_qt` | `np.percentile(delay_up_qt, 50)` | ❌ 否 | **Z-score** | 连续 | 
+| 8 | `p75_delay_up` | 归一化后的 `delay_up_qt` | `np.percentile(delay_up_qt, 75)` | ❌ 否 | **Z-score** | 连续 | 
+| 9 | `p90_delay_up` | 归一化后的 `delay_up_qt` | `np.percentile(delay_up_qt, 90)` | ❌ 否 | **Z-score** | 连续 | 
+|10 | `p95_delay_up` | 归一化后的 `delay_up_qt` | `np.percentile(delay_up_qt, 95)` | ❌ 否 | **Z-score** | 连续 | 
+|11 | `p99_delay_up` | 归一化后的 `delay_up_qt` | `np.percentile(delay_up_qt, 99)` | ❌ 否 | **Z-score** | 连续 | 
+|12 | `frac_cat1_up` | 上行丢包序列 `loss_up` | `np.mean(loss_up)` | ✅ 二值化 | **Z-score** | 连续 | 
+|13 | `mean_delay_down` | QuantileTransformer 归一化后的下行延迟 `delay_down_qt` | `np.mean(delay_down_qt)` | ❌ 否 | **Z-score**（使用 delay_down 的参数） | 连续 | 
+|14 | `std_delay_down` | 归一化后的 `delay_down_qt` | `np.std(delay_down_qt)` | ❌ 否 | **Z-score** | 连续 | 
+|15 | `p1_delay_down` | 归一化后的 `delay_down_qt` | `np.percentile(delay_down_qt, 1)` | ❌ 否 | **Z-score** | 连续 | 
+|16 | `p5_delay_down` | 归一化后的 `delay_down_qt` | `np.percentile(delay_down_qt, 5)` | ❌ 否 | **Z-score** | 连续 | 
+|17 | `p10_delay_down` | 归一化后的 `delay_down_qt` | `np.percentile(delay_down_qt, 10)` | ❌ 否 | **Z-score** | 连续 | 
+|18 | `p25_delay_down` | 归一化后的 `delay_down_qt` | `np.percentile(delay_down_qt, 25)` | ❌ 否 | **Z-score** | 连续 | 
+|19 | `p50_delay_down` | 归一化后的 `delay_down_qt` | `np.percentile(delay_down_qt, 50)` | ❌ 否 | **Z-score** | 连续 | 
+|20 | `p75_delay_down` | 归一化后的 `delay_down_qt` | `np.percentile(delay_down_qt, 75)` | ❌ 否 | **Z-score** | 连续 | 
+|21 | `p90_delay_down` | 归一化后的 `delay_down_qt` | `np.percentile(delay_down_qt, 90)` | ❌ 否 | **Z-score** | 连续 | 
+|22 | `p95_delay_down` | 归一化后的 `delay_down_qt` | `np.percentile(delay_down_qt, 95)` | ❌ 否 | **Z-score** | 连续 | 
+|23 | `p99_delay_down` | 归一化后的 `delay_down_qt` | `np.percentile(delay_down_qt, 99)` | ❌ 否 | **Z-score** | 连续 | 
+|24 | `frac_cat1_down` | 下行丢包序列 `loss_dn` | `np.mean(loss_dn)` | ✅ 二值化 | **Z-score** | 连续 | 
 
 ## 处理流程（代码逻辑）
 

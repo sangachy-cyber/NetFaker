@@ -333,9 +333,14 @@ class ClusteringVisualizer:
         window_df = window_df.head(100)
         
         # 反归一化函数
-        def inverse_transform_delay(delays, qt_model):
-            delays_2d = delays.reshape(-1, 1)
+        def inverse_transform_delay(delays, qt_model, mean=0.0, std=1.0):
+            # 1. 先进行z-score反变换
+            delays_zscore_inv = delays * std + mean
+            # 2. 确保输入是二维数组
+            delays_2d = delays_zscore_inv.reshape(-1, 1)
+            # 3. 反QuantileTransformer变换
             inverse_delays = qt_model.inverse_transform(delays_2d)
+            # 4. 转换回一维数组
             return inverse_delays.flatten()
         
         # 反归一化时延数据

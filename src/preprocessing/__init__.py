@@ -27,8 +27,6 @@ __all__ = [
     
     # 新接口
     "compute_window_features",
-    "compute_local_features",
-    "merge_features",
     "normalize_condition_vector",
 ]
 
@@ -46,8 +44,6 @@ from .processing import (
 )
 from .features import (
     compute_window_features,
-    compute_local_features,
-    merge_features,
     normalize_condition_vector,
 )
 from .io import DataSaver, ReportGenerator
