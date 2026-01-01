@@ -95,8 +95,8 @@ class CSDIModel(nn.Module):
         self.hidden_dim = hidden_dim
         self.cond_dim = cond_dim
         
-        # 嵌入层
-        self.value_emb = nn.Linear(1, hidden_dim)  # 值嵌入
+        # 嵌入层 - 修改为更小的输出维度，为cond_emb留出空间
+        self.value_emb = nn.Linear(1, hidden_dim // 2)  # 值嵌入，输出维度减半
         self.time_emb = TimeEmbedding(hidden_dim)  # 时间嵌入
         self.feature_emb = nn.Embedding(
             input_dim, hidden_dim
@@ -116,6 +116,11 @@ class CSDIModel(nn.Module):
         
         # 添加可学习的无条件嵌入，用于处理CFG的无条件分支
         self.uncond_embedding = nn.Parameter(torch.randn(hidden_dim))
+        
+        # 定义拼接后的投影层
+        # 输入维度: (hidden_dim//2)*2 + hidden_dim + hidden_dim + hidden_dim = 4 * hidden_dim
+        # 输出维度: hidden_dim
+        self.fusion_proj = nn.Linear(4 * hidden_dim, hidden_dim)
         
         # 简化Transformer编码器
         self.encoder = nn.TransformerEncoder(
@@ -160,13 +165,13 @@ class CSDIModel(nn.Module):
         # 展平为 [B, K, L, 1]
         x = values.unsqueeze(-1)
         
-        # 嵌入
-        value_emb = self.value_emb(x)  # [B, K, L, H]
-        time_emb = self.time_emb(time_stamps).unsqueeze(1)  # [B, 1, L, H]
+        # 嵌入 - 重构为拼接+投影方式
+        value_emb = self.value_emb(x)  # [B, K, L, H//2] - 值嵌入，输出维度减半
+        time_emb = self.time_emb(time_stamps).unsqueeze(1)  # [B, 1, L, H] - 时间嵌入
         
         # 创建feature_ids，使用values的设备
         feature_ids = torch.arange(K, device=values.device).view(1, K, 1)  # [1, K, 1]
-        feature_emb = self.feature_emb(feature_ids)  # [1, K, 1, H]
+        feature_emb = self.feature_emb(feature_ids)  # [1, K, 1, H] - 特征嵌入
         
         # 条件嵌入：分离处理behavior ID和分位点条件
         # 检查是否是无条件请求（使用特殊标记-100.0）
@@ -217,7 +222,6 @@ class CSDIModel(nn.Module):
             full_cond_feat = torch.cat([behavior_emb, dist_feat], dim=-1)  # [B, H + 32]
             cond_emb = self.cond_proj(full_cond_feat)  # [B, H]
             cond_emb = cond_emb.unsqueeze(1).unsqueeze(2)  # [B, 1, 1, H]
-            # 移除额外的条件嵌入权重，由guidance_scale单独控制条件引导强度
         
         # Debug: Check cond_emb
         if torch.rand(1) < 0.05:  # 5% chance to print debug info
@@ -225,13 +229,27 @@ class CSDIModel(nn.Module):
             print(f"[Debug] CSDIModel.forward - cond_emb mean: {cond_emb.mean().item():.4f}")
             print(f"[Debug] CSDIModel.forward - cond_emb std: {cond_emb.std().item():.4f}")
         
-        # 合并所有嵌入，确保条件嵌入有足够的影响
-        # 将条件嵌入添加到所有其他嵌入中，增强其影响力
-        # 首先将条件嵌入与时间嵌入、特征嵌入深度融合
-        combined_emb = time_emb + feature_emb + cond_emb
-        # 然后与值嵌入相加，并再次添加条件嵌入，确保条件信息占主导地位
-        # 增加条件嵌入的权重，确保条件信息被充分利用
-        h = value_emb + combined_emb + cond_emb * 2.0  # [B, K, L, H]，增加条件嵌入权重
+        # --- 关键修改：拼接而非相加 --- 
+        # 将 value_emb 扩展到 [B, K, L, H] 以匹配其他嵌入
+        value_emb_expanded = value_emb.repeat(1, 1, 1, 2)  # [B, K, L, H] - 重复一次，扩展到H维度
+        
+        # 扩展所有嵌入到相同的形状
+        B, K, L, _ = value_emb_expanded.shape
+        
+        # 扩展time_emb到[B, K, L, H]
+        time_emb_expanded = time_emb.expand(B, K, L, -1)  # [B, K, L, H]
+        
+        # 扩展feature_emb到[B, K, L, H]
+        feature_emb_expanded = feature_emb.expand(B, K, L, -1)  # [B, K, L, H]
+        
+        # 扩展cond_emb到[B, K, L, H]
+        cond_emb_expanded = cond_emb.expand(B, K, L, -1)  # [B, K, L, H]
+        
+        # 拼接所有嵌入: [B, K, L, H + H + H + H] = [B, K, L, 4H]
+        h = torch.cat([value_emb_expanded, time_emb_expanded, feature_emb_expanded, cond_emb_expanded], dim=-1)
+        
+        # 投影回 hidden_dim 维度
+        h = self.fusion_proj(h)  # [B, K, L, H]
         
         # 重排为 [B*K, L, H]，便于Transformer处理
         h = rearrange(h, "b k l h -> (b k) l h")
