@@ -1251,7 +1251,7 @@ def main():
     generated_samples = generate_samples(
         model, sde, test_conds, 
         num_inference_steps=args.num_inference_steps,
-        guidance_scale=2.0  # 关键修改：从10.0降低到2.0，适合uniform空间
+        guidance_scale=1.5  # 关键修改：从2.0降低到1.5，进一步降低引导强度
     )
 
     print(f"6. 生成样本完成，形状：{generated_samples.shape}")
