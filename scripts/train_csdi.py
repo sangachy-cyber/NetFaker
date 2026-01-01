@@ -457,20 +457,41 @@ class NetworkTraceCSDIDataset(Dataset):
         
         # 只保留原始序列长度
         values = np.zeros((4, self.L_total))
-        mask = np.zeros((4, self.L_total))
         
-        # 填充原始窗口（待生成）
+        # 填充原始窗口数据
         values[:, :self.seq_len] = window_values  # [4, 100]
-        mask = np.zeros((4, self.L_total))  # 全0，无观测点
-        # 彻底移除所有虚拟点，让模型完全通过条件向量和diffusion学习自然分布
+        
+        # --- 关键修改：创建随机遮盖的mask，确保模型能学习条件生成 --- 
+        # 1. 创建全1的mask，表示所有点都是可观测的
+        mask = np.ones((4, self.L_total))
+        
+        # 2. 随机选择一部分点进行遮盖（每个通道独立）
+        for ch in range(4):
+            # 决定该通道要保留多少个点 (至少保留1个，最多保留30%)
+            min_observed = 1
+            max_observed = max(2, int(0.3 * self.L_total))  # 最多保留30%
+            num_observed = np.random.randint(min_observed, max_observed + 1)
+            
+            # 随机选择要保留的索引
+            observed_indices = np.random.choice(self.L_total, num_observed, replace=False)
+            
+            # 创建该通道的mask：保留的点设为1，其余设为0
+            ch_mask = np.zeros(self.L_total)
+            ch_mask[observed_indices] = 1.0
+            
+            # 将该通道的mask赋值到整体mask中
+            mask[ch, :] = ch_mask
+        
+        # 3. 确保生成时的输入值是原始值 * mask，未观测点设为0
+        input_values = values * mask
         
         # 时间戳 [0.0, ..., 1.0]，统一时间范围为[0, 1]
         time_stamps = np.linspace(0.0, 1.0, self.L_total)
         
         # 转换为torch张量
         return {
-            "values": torch.tensor(values, dtype=torch.float32),
-            "mask": torch.tensor(mask, dtype=torch.float32),
+            "values": torch.tensor(input_values, dtype=torch.float32),  # 输入模型的值是被遮盖后的值
+            "mask": torch.tensor(mask, dtype=torch.float32),  # mask指示哪些点是被遮盖的
             "time_stamps": torch.tensor(time_stamps, dtype=torch.float32),
             "cond": torch.tensor(cond, dtype=torch.float32),
         }
