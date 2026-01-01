@@ -105,12 +105,17 @@ class CSDIModel(nn.Module):
         # 添加behavior ID嵌入层
         self.behavior_id_emb = nn.Embedding(num_behavior_ids, hidden_dim)
         
-        # 分位点条件投影：接收14维分位点特征（去除ID）
+        # 分布嵌入：使用排序+差分+MLP方案
+        # 每个分布（上行/下行）的特征：原始值(7) + 差分(6) + 均值(1) + 极差(1) + 标准差(1) = 16
+        # 上下行共32，加上行为ID嵌入(hidden_dim)，总输入32 + hidden_dim
         self.cond_proj = nn.Sequential(
-            nn.Linear(cond_dim - 1, hidden_dim),  # 条件向量去除ID维度
+            nn.Linear(hidden_dim + 32, hidden_dim),  # 行为ID嵌入 + 32维分布特征
             nn.ReLU(),
             nn.Linear(hidden_dim, hidden_dim)
         )
+        
+        # 添加可学习的无条件嵌入，用于处理CFG的无条件分支
+        self.uncond_embedding = nn.Parameter(torch.randn(hidden_dim))
         
         # 简化Transformer编码器
         self.encoder = nn.TransformerEncoder(
@@ -164,23 +169,55 @@ class CSDIModel(nn.Module):
         feature_emb = self.feature_emb(feature_ids)  # [1, K, 1, H]
         
         # 条件嵌入：分离处理behavior ID和分位点条件
-        # 1. 提取behavior ID（第0维）和分位点特征（1-14维）
-        behavior_id = cond[:, 0].long()  # [B]
-        quantile_cond = cond[:, 1:]  # [B, 14]
+        # 检查是否是无条件请求（使用特殊标记-100.0）
+        is_uncond = torch.all(cond == -100.0)  # 检查所有元素是否都是-100.0
         
-        # 2. behavior ID嵌入
-        behavior_id_emb = self.behavior_id_emb(behavior_id)  # [B, H]
-        behavior_id_emb = behavior_id_emb.unsqueeze(1).unsqueeze(2)  # [B, 1, 1, H]
-        
-        # 3. 分位点条件投影
-        quantile_emb = self.cond_proj(quantile_cond)  # [B, H]
-        quantile_emb = quantile_emb.unsqueeze(1).unsqueeze(2)  # [B, 1, 1, H]
-        
-        # 4. 合并条件嵌入
-        cond_emb = behavior_id_emb + quantile_emb  # [B, 1, 1, H]
-        
-        # 5. 增强条件嵌入的影响
-        cond_emb = cond_emb * 10.0  # 更强力地增强条件嵌入的影响
+        if is_uncond:
+            # 使用可学习的无条件嵌入
+            batch_size = cond.shape[0]
+            cond_emb = self.uncond_embedding.unsqueeze(0).expand(batch_size, -1)  # [B, H]
+            cond_emb = cond_emb.unsqueeze(1).unsqueeze(2)  # [B, 1, 1, H]
+        else:
+            # 1. 提取behavior ID（第0维）和分位点特征（1-14维）
+            behavior_id = cond[:, 0].long()  # [B]
+            
+            # 实现分布嵌入：排序 + 差分 + MLP方案
+            # 1. 提取上行和下行分位点（各7个）
+            # cond维度：15 = 1行为ID + 7上行分位点 + 7下行分位点
+            up_quantiles = cond[:, 1:8]      # [B, 7] 上行分位点：p1, p10, p25, p50, p75, p90, p99
+            dn_quantiles = cond[:, 8:15]     # [B, 7] 下行分位点：p1, p10, p25, p50, p75, p90, p99
+            
+            # 2. 分布特征编码函数
+            def encode_distribution(q):
+                # q: [B, 7] 分位点值
+                # 1. 原始值（已排序）
+                raw = q  # [B, 7]
+                # 2. 差分特征：相邻分位点的差值，反映局部密度
+                diffs = torch.diff(q, dim=-1)  # [B, 6]
+                # 3. 全局统计特征
+                mean_q = q.mean(dim=-1, keepdim=True)      # [B, 1] 均值
+                range_q = (q[:, -1] - q[:, 0]).unsqueeze(-1)  # [B, 1] 极差
+                std_q = q.std(dim=-1, keepdim=True)        # [B, 1] 标准差
+                
+                # 拼接所有特征：7原始 + 6差分 + 1均值 + 1极差 + 1标准差 = 16维
+                dist_feat = torch.cat([raw, diffs, mean_q, range_q, std_q], dim=-1)  # [B, 16]
+                return dist_feat
+            
+            # 3. 编码上行和下行分布
+            up_dist_feat = encode_distribution(up_quantiles)  # [B, 16]
+            dn_dist_feat = encode_distribution(dn_quantiles)  # [B, 16]
+            
+            # 4. 合并上下行分布特征
+            dist_feat = torch.cat([up_dist_feat, dn_dist_feat], dim=-1)  # [B, 32]
+            
+            # 5. 行为ID嵌入
+            behavior_emb = self.behavior_id_emb(behavior_id)  # [B, H]
+            
+            # 6. 拼接行为ID嵌入和分布特征，然后通过MLP投影
+            full_cond_feat = torch.cat([behavior_emb, dist_feat], dim=-1)  # [B, H + 32]
+            cond_emb = self.cond_proj(full_cond_feat)  # [B, H]
+            cond_emb = cond_emb.unsqueeze(1).unsqueeze(2)  # [B, 1, 1, H]
+            # 移除额外的条件嵌入权重，由guidance_scale单独控制条件引导强度
         
         # Debug: Check cond_emb
         if torch.rand(1) < 0.05:  # 5% chance to print debug info
@@ -193,7 +230,8 @@ class CSDIModel(nn.Module):
         # 首先将条件嵌入与时间嵌入、特征嵌入深度融合
         combined_emb = time_emb + feature_emb + cond_emb
         # 然后与值嵌入相加，并再次添加条件嵌入，确保条件信息占主导地位
-        h = value_emb + combined_emb + cond_emb  # [B, K, L, H]
+        # 增加条件嵌入的权重，确保条件信息被充分利用
+        h = value_emb + combined_emb + cond_emb * 2.0  # [B, K, L, H]，增加条件嵌入权重
         
         # 重排为 [B*K, L, H]，便于Transformer处理
         h = rearrange(h, "b k l h -> (b k) l h")
@@ -215,15 +253,15 @@ class SimpleSDE:
     实现了方差保持SDE的边际分布和去噪步骤
     """
     
-    def __init__(self, beta_min: float = 0.1, beta_max: float = 20.0):
+    def __init__(self, beta_min: float = 0.05, beta_max: float = 10.0):
         """初始化SDE
         
         Args:
             beta_min: 最小噪声强度
             beta_max: 最大噪声强度
         """
-        self.beta_min = beta_min
-        self.beta_max = beta_max
+        self.beta_min = beta_min  # 降低最小噪声强度，适合uniform空间
+        self.beta_max = beta_max  # 降低最大噪声强度，减少扩散过程的极端值
     
     def marginal_prob(self, x0: torch.Tensor, t: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """计算边际分布
@@ -268,7 +306,7 @@ class SimpleSDE:
         # 添加小epsilon防止除以零
         std_t = torch.sqrt(1. - alpha_t + 1e-8)  # 当前时间步的标准差
         
-        # 计算score：-pred_noise / std_t
+        # 计算score：-pred_noise / std_t（根据SDE理论，score是负的噪声除以标准差）
         score = -pred_noise / (std_t + 1e-8)  # 添加epsilon防止除以零
         
         # 计算β(t) = β_min + t*(β_max - β_min)
@@ -366,7 +404,7 @@ class NetworkTraceCSDIDataset(Dataset):
         # 提取4个变量的值 [100, 4]
         if isinstance(window, pd.DataFrame):
             # 如果window是DataFrame，直接提取值
-            window_values = window[["delay_up", "delay_down", "loss_up", "loss_dn"]].values.T  # [4, 100]
+            window_values = window[["delay_up_qt", "delay_down_qt", "loss_up", "loss_dn"]].values.T  # [4, 100]
         else:
             # 处理从JSONL加载的窗口数据
             # 从window数组中提取4个变量的值
@@ -375,8 +413,8 @@ class NetworkTraceCSDIDataset(Dataset):
             for i, row in enumerate(window):
                 if i >= self.seq_len:
                     break
-                window_values[0, i] = row.get("delay_up", 0.0)      # up_delay
-                window_values[1, i] = row.get("delay_down", 0.0)    # dn_delay
+                window_values[0, i] = row.get("delay_up_qt", 0.0)      # up_delay_qt
+                window_values[1, i] = row.get("delay_down_qt", 0.0)    # dn_delay_qt
                 window_values[2, i] = row.get("loss_up", 0.0)       # up_loss
                 window_values[3, i] = row.get("loss_dn", 0.0)       # dn_loss
         
@@ -462,9 +500,9 @@ class CSDITrainer:
         model: CSDIModel,
         sde: SimpleSDE,
         device: str = "cpu",
-        patience: int = 10,  # 增加耐心值
-        min_epochs: int = 20,  # 最小训练轮数
-        delta: float = 1e-4  # 最小改进阈值
+        patience: int = 30,  # 增加耐心值到30，容忍30个epoch无改进
+        min_epochs: int = 150,  # 最小训练轮数增加到150，确保模型充分学习
+        delta: float = 1e-4  # 最小改进阈值，保持不变
     ):
         """初始化CSDI训练器
         
@@ -500,7 +538,7 @@ class CSDITrainer:
         values = batch["values"].to(self.device)      # [B, 4, 100]
         mask = batch["mask"].to(self.device)          # [B, 4, 100]
         time_stamps = batch["time_stamps"].to(self.device)  # [B, 100]
-        full_cond = batch["cond"].to(self.device)     # [B, 23]
+        full_cond = batch["cond"].to(self.device)     # [B, cond_dim]
         
         # 直接使用完整条件向量，不再简化
         cond = full_cond  # [B, cond_dim]
@@ -519,14 +557,14 @@ class CSDITrainer:
             values  # observed位置保持原值
         )
         
+
         # Classifier-Free Guidance (CFG) 训练
         # 1. 以一定概率生成无条件样本
         # 使用0.1的概率进行无条件训练（与常见CFG实现一致）
         do_uncond = torch.rand(1) < 0.1
         if do_uncond:
-            # 无条件训练：保留behavior ID，将分位点条件置零
-            uncond_cond = cond.clone()
-            uncond_cond[:, 1:] = 0  # 只mask分位点条件，保留behavior ID
+            # 无条件训练：使用特殊标记-100.0表示无条件
+            uncond_cond = torch.full_like(cond, -100.0)  # 使用-100.0作为无条件标记
             pred_noise = self.model(perturbed_values, time_stamps, mask, uncond_cond)
         else:
             # 条件训练：使用真实条件
@@ -592,14 +630,14 @@ class CSDITrainer:
             p50_pos = 50  # t=0.5
             
             # 打印第一个样本的虚拟点相关信息
-            print(f"样本1 - values[0, 0, {p50_pos}]: {values[0, 0, p50_pos].item():.4f} (up_delay p50 at t=0.5)")
-            print(f"样本1 - values[0, 1, {p50_pos}]: {values[0, 1, p50_pos].item():.4f} (dn_delay p50 at t=0.5)")
+            print(f"样本1 - values[0, 0, {p50_pos}]: {values[0, 0, p50_pos].item():.4f} (up_delay_qt p50 at t=0.5)")
+            print(f"样本1 - values[0, 1, {p50_pos}]: {values[0, 1, p50_pos].item():.4f} (dn_delay_qt p50 at t=0.5)")
             
-            print(f"样本1 - mask[0, 0, {p50_pos}]: {mask[0, 0, p50_pos].item()} (up_delay p50 mask at t=0.5)")
-            print(f"样本1 - mask[0, 1, {p50_pos}]: {mask[0, 1, p50_pos].item()} (dn_delay p50 mask at t=0.5)")
+            print(f"样本1 - mask[0, 0, {p50_pos}]: {mask[0, 0, p50_pos].item()} (up_delay_qt p50 mask at t=0.5)")
+            print(f"样本1 - mask[0, 1, {p50_pos}]: {mask[0, 1, p50_pos].item()} (dn_delay_qt p50 mask at t=0.5)")
             
-            print(f"样本1 - perturbed_values[0, 0, {p50_pos}]: {perturbed_values[0, 0, p50_pos].item():.4f} (up_delay p50 扰动后 at t=0.5)")
-            print(f"样本1 - perturbed_values[0, 1, {p50_pos}]: {perturbed_values[0, 1, p50_pos].item():.4f} (dn_delay p50 扰动后 at t=0.5)")
+            print(f"样本1 - perturbed_values[0, 0, {p50_pos}]: {perturbed_values[0, 0, p50_pos].item():.4f} (up_delay_qt p50 扰动后 at t=0.5)")
+            print(f"样本1 - perturbed_values[0, 1, {p50_pos}]: {perturbed_values[0, 1, p50_pos].item():.4f} (dn_delay_qt p50 扰动后 at t=0.5)")
             
             # 检查是否相等（允许微小浮点误差）
             is_up_p50_unchanged = torch.allclose(perturbed_values[0, 0, p50_pos], values[0, 0, p50_pos], atol=1e-6)
@@ -608,8 +646,8 @@ class CSDITrainer:
             print(f"样本1 - 虚拟点是否未被加噪: up_p50_t0.5={is_up_p50_unchanged}, dn_p50_t0.5={is_dn_p50_unchanged}")
             
             # 打印 x0_pred 的 debug 信息
-            print(f"样本1 - x0_pred[0, 0, {p50_pos}]: {x0_pred[0, 0, p50_pos].item():.4f} (x0_pred up_delay at t=0.5)")
-            print(f"样本1 - x0_pred[0, 1, {p50_pos}]: {x0_pred[0, 1, p50_pos].item():.4f} (x0_pred dn_delay at t=0.5)")
+            print(f"样本1 - x0_pred[0, 0, {p50_pos}]: {x0_pred[0, 0, p50_pos].item():.4f} (x0_pred up_delay_qt at t=0.5)")
+            print(f"样本1 - x0_pred[0, 1, {p50_pos}]: {x0_pred[0, 1, p50_pos].item():.4f} (x0_pred dn_delay_qt at t=0.5)")
             print()
         
         return total_loss
@@ -804,8 +842,8 @@ class CSDISampler:
     def sample(
         self,
         cond: torch.Tensor,
-        num_inference_steps: int = 50,
-        guidance_scale: float = 1.0  # CFG guidance scale
+        num_inference_steps: int = 100,  # Increased steps for smoother denoising
+        guidance_scale: float = 1.5  # CFG guidance scale - further reduced for uniform space
     ) -> torch.Tensor:
         """从条件向量生成新样本，支持Classifier-Free Guidance (CFG)
         
@@ -851,9 +889,8 @@ class CSDISampler:
                 # Classifier-Free Guidance (CFG)
                 if guidance_scale > 1.0:
                     # 1. 生成无条件和条件噪声
-                    # 无条件样本：保留behavior ID，将分位点条件置零
-                    uncond_cond = simplified_cond.clone()
-                    uncond_cond[:, 1:] = 0  # 只mask分位点条件，保留behavior ID
+                    # 无条件样本：使用特殊标记-100.0表示无条件
+                    uncond_cond = torch.full_like(simplified_cond, -100.0)  # 使用-100.0作为无条件标记
                     uncond_noise = self.model(x, time_stamps, mask, uncond_cond)
                     cond_noise = self.model(x, time_stamps, mask, simplified_cond)
                     
@@ -865,6 +902,7 @@ class CSDISampler:
                 
                 # 更新x，使用确定性去噪步骤
                 x = self.sde.denoise_step(x, pred_noise, t, next_t, deterministic=True)
+                # 彻底移除clamp操作，允许模型自由生成，恢复尾部分布
         
         # 生成最终样本
         generated = x[:, :, :L]
@@ -887,9 +925,9 @@ def train_csdi(
     Returns:
         Tuple[CSDIModel, SimpleSDE]: 训练好的模型和SDE对象
     """
-    # 配置 - 调整训练策略，平衡性能和速度
+    # 配置 - 调整训练策略，确保模型充分训练
     batch_size = config.get("batch_size", 32)
-    num_epochs = config.get("num_epochs", 50)  # 恢复到50轮，平衡训练时间和效果
+    num_epochs = config.get("num_epochs", 150)  # 增加到150轮，确保达到min_epochs要求
     learning_rate = config.get("learning_rate", 1e-5)  # 保持较低学习率，确保稳定训练
     hidden_dim = config.get("hidden_dim", 128)  # 恢复到128，减少模型参数量，加快训练
     num_layers = config.get("num_layers", 4)  # 恢复到4层，减少计算量
@@ -937,14 +975,14 @@ def generate_samples(
     cond: torch.Tensor,
     num_inference_steps: int = 50,
     device: str = "cpu",
-    guidance_scale: float = 3.0  # CFG引导强度，提高到3.0增强条件控制
+    guidance_scale: float = 2.0  # CFG引导强度，降低到2.0适合uniform空间
 ) -> torch.Tensor:
     """生成样本
     
     Args:
         model: 训练好的模型
         sde: SDE对象
-        cond: [B, 23] 条件向量
+        cond: [B, cond_dim] 条件向量
         num_inference_steps: 推理步数
         device: 采样设备
         guidance_scale: CFG引导强度，范围[0, ∞)，默认3.0
@@ -1008,7 +1046,7 @@ def load_windows_from_jsonl(file_path: str) -> list:
     # for i, window_meta in enumerate(windows):
     #     cond = window_meta["cond"]
     #     need_fix = False
-        
+    #     
     #     # 确保p5 <= p95
     #     if cond[CondIndex.UP_P5] > cond[CondIndex.UP_P95]:
     #         cond[CondIndex.UP_P5] = cond[CondIndex.UP_P95]
@@ -1016,7 +1054,7 @@ def load_windows_from_jsonl(file_path: str) -> list:
     #     if cond[CondIndex.DN_P5] > cond[CondIndex.DN_P95]:
     #         cond[CondIndex.DN_P5] = cond[CondIndex.DN_P95]
     #         need_fix = True
-        
+    #     
     #     # 确保std >= 0
     #     if cond[CondIndex.UP_STD] < 0:
     #         cond[CondIndex.UP_STD] = 0
@@ -1024,11 +1062,11 @@ def load_windows_from_jsonl(file_path: str) -> list:
     #     if cond[CondIndex.DN_STD] < 0:
     #         cond[CondIndex.DN_STD] = 0
     #         need_fix = True
-        
+    #     
     #     if need_fix:
     #         windows[i]["cond"] = cond
     #         fixed_count += 1
-    
+    # 
     # if fixed_count > 0:
     #     print(f"[Data Fix] 修复了 {fixed_count} 个条件向量的合法性问题")
     
@@ -1209,19 +1247,73 @@ def main():
     print(f"[Debug] test_conds full shape: {test_conds.shape}")
     print(f"[Debug] test_conds first sample: {test_conds[0].tolist()}")
     
-    # 生成样本
+    # 生成样本 - 降低CFG引导强度，适合uniform空间
     generated_samples = generate_samples(
-        model, sde, test_conds, num_inference_steps=args.num_inference_steps
+        model, sde, test_conds, 
+        num_inference_steps=args.num_inference_steps,
+        guidance_scale=2.0  # 关键修改：从10.0降低到2.0，适合uniform空间
     )
-    
+
     print(f"6. 生成样本完成，形状：{generated_samples.shape}")
     # 打印生成样本的范围，检查是否有异常值
     print(f"   生成样本范围 - min: {generated_samples.min().item():.4f}, max: {generated_samples.max().item():.4f}")
+
+    # 对生成的样本进行反归一化处理
+    generated_samples_np = generated_samples.cpu().numpy()
+    # 加载QuantileTransformer，用于反归一化
+    if not args.skip_preprocessing:
+        # 如果没有跳过预处理，从preprocessing_result中获取qt_up和qt_dn
+        qt_up = preprocessing_result["assets"]["qt_up"]
+        qt_dn = preprocessing_result["assets"]["qt_down"]
+    else:
+        # 否则，尝试从assets目录加载
+        assets_dir = Path("./output/assets")
+        qt_up_path = assets_dir / "qt_up.pkl"
+        qt_dn_path = assets_dir / "qt_down.pkl"
+        
+        if qt_up_path.exists() and qt_dn_path.exists():
+            qt_up = joblib.load(qt_up_path)
+            qt_dn = joblib.load(qt_dn_path)
+            print(f"   成功从 {assets_dir} 加载QuantileTransformer")
+        else:
+            qt_up = None
+            qt_dn = None
+            print(f"Warning: QuantileTransformer not found in {assets_dir}, skipping inverse transformation.")
     
-    # 7. 保存生成的样本
+    # 对生成的样本进行反归一化处理
+    generated_samples_np = generated_samples.cpu().numpy()
+    if qt_up is not None and qt_dn is not None:
+        print("\n7. 对生成样本进行反归一化处理...")
+        # 复制一份原始样本，用于反归一化
+        generated_samples_denorm = generated_samples_np.copy()
+        
+        # 分别对上行和下行时延进行反归一化
+        # 维度：[B, 4, 100]，其中第1维是变量索引：0=上行时延, 1=下行时延, 2=上行丢包率, 3=下行丢包率
+        B, K, L = generated_samples_np.shape
+        
+        # 1. 上行时延反归一化
+        # 取消clip，直接进行反归一化
+        up_delay_norm = generated_samples_np[:, 0, :].reshape(-1, 1)  # 转换为 [B*L, 1]
+        up_delay_denorm = qt_up.inverse_transform(up_delay_norm).reshape(B, L)  # 直接反归一化，不进行clip
+        generated_samples_denorm[:, 0, :] = up_delay_denorm  # 更新上行时延
+        
+        # 2. 下行时延反归一化
+        # 取消clip，直接进行反归一化
+        down_delay_norm = generated_samples_np[:, 1, :].reshape(-1, 1)  # 转换为 [B*L, 1]
+        down_delay_denorm = qt_dn.inverse_transform(down_delay_norm).reshape(B, L)  # 直接反归一化，不进行clip
+        generated_samples_denorm[:, 1, :] = down_delay_denorm  # 更新下行时延
+        
+        print(f"   反归一化后样本范围：{generated_samples_denorm.min():.4f} ~ {generated_samples_denorm.max():.4f}")
+        print(f"   上行时延范围：{generated_samples_denorm[:, 0, :].min():.4f} ms ~ {generated_samples_denorm[:, 0, :].max():.4f} ms")
+        print(f"   下行时延范围：{generated_samples_denorm[:, 1, :].min():.4f} ms ~ {generated_samples_denorm[:, 1, :].max():.4f} ms")
+        # 使用反归一化后的样本
+        generated_samples_np = generated_samples_denorm
+    
+    # 保存生成的样本
     samples_path = output_dir / "generated_samples.npy"
-    np.save(samples_path, generated_samples.cpu().numpy())
-    print(f"7. 生成的样本已保存到：{samples_path}")
+    import numpy as np
+    np.save(samples_path, generated_samples_np)
+    print(f"8. 反归一化后的样本已保存到：{samples_path}")
     
     # 8. 加载QuantileTransformer，用于反归一化
     if not args.skip_preprocessing:
@@ -1247,6 +1339,9 @@ def main():
     print("\n8. 生成样本统计特征与参考样本对比：")
     generated_samples_np = generated_samples.cpu().numpy()
     
+    # 保存参考样本信息，用于可视化
+    reference_samples_info = []
+    
     for i in range(generated_samples_np.shape[0]):
         # 获取参考样本信息
         ref_window = selected_windows[i]
@@ -1260,427 +1355,193 @@ def main():
         print(f"  参考样本条件向量 - up_p10: {ref_cond[CondIndex.UP_P10]:.4f}, up_p99: {ref_cond[CondIndex.UP_P99]:.4f}, up_p50: {ref_cond[CondIndex.UP_P50]:.4f}")
         print(f"  参考样本条件向量 - dn_p10: {ref_cond[CondIndex.DN_P10]:.4f}, dn_p99: {ref_cond[CondIndex.DN_P99]:.4f}, dn_p50: {ref_cond[CondIndex.DN_P50]:.4f}")
         
+        # 提取参考样本的实际时延数据并计算统计特征
+        ref_window_df = ref_window["window"]
+        if isinstance(ref_window_df, pd.DataFrame):
+            # 如果window是DataFrame，直接提取值
+            ref_del_up_qt = ref_window_df["delay_up_qt"].values
+            ref_del_dn_qt = ref_window_df["delay_down_qt"].values
+            
+            # 将DataFrame转换为字典列表，便于JSON序列化
+            window_list = []
+            for _, row in ref_window_df.iterrows():
+                window_list.append({
+                    "delay_up_qt": row["delay_up_qt"],
+                    "delay_down_qt": row["delay_down_qt"]
+                })
+        else:
+            # 处理从JSONL加载的窗口数据
+            ref_del_up_qt = np.array([row.get("delay_up_qt", 0.0) for row in ref_window_df])
+            ref_del_dn_qt = np.array([row.get("delay_down_qt", 0.0) for row in ref_window_df])
+            # 已经是列表格式，直接使用
+            window_list = ref_window_df
+        
+        # 计算参考样本的统计特征
+        ref_up_p5 = np.percentile(ref_del_up_qt, 5)
+        ref_up_p50 = np.percentile(ref_del_up_qt, 50)
+        ref_up_p95 = np.percentile(ref_del_up_qt, 95)
+        ref_up_p99 = np.percentile(ref_del_up_qt, 99)
+        ref_up_std = np.std(ref_del_up_qt)
+        
+        ref_down_p5 = np.percentile(ref_del_dn_qt, 5)
+        ref_down_p50 = np.percentile(ref_del_dn_qt, 50)
+        ref_down_p95 = np.percentile(ref_del_dn_qt, 95)
+        ref_down_p99 = np.percentile(ref_del_dn_qt, 99)
+        ref_down_std = np.std(ref_del_dn_qt)
+        
+        # 打印参考样本统计特征（QT归一化空间）
+        print("\n  参考样本统计特征（QT归一化空间）：")
+        print(f"  上行延迟 - p5: {ref_up_p5:.4f}, p50: {ref_up_p50:.4f}, p95: {ref_up_p95:.4f}, p99: {ref_up_p99:.4f}, std: {ref_up_std:.4f}")
+        print(f"  下行延迟 - p5: {ref_down_p5:.4f}, p50: {ref_down_p50:.4f}, p95: {ref_down_p95:.4f}, p99: {ref_down_p99:.4f}, std: {ref_down_std:.4f}")
+        
+        # 参考样本反归一化（QT空间 → 原始空间）
+        if qt_up is not None and qt_dn is not None:
+            # 将QT空间的时延数据转换回原始空间
+            ref_del_up_original = qt_up.inverse_transform(ref_del_up_qt.reshape(-1, 1)).flatten()
+            ref_del_dn_original = qt_dn.inverse_transform(ref_del_dn_qt.reshape(-1, 1)).flatten()
+            
+            # 计算反归一化后的统计特征
+            ref_up_original_p5 = np.percentile(ref_del_up_original, 5)
+            ref_up_original_p50 = np.percentile(ref_del_up_original, 50)
+            ref_up_original_p95 = np.percentile(ref_del_up_original, 95)
+            ref_up_original_p99 = np.percentile(ref_del_up_original, 99)
+            ref_up_original_std = np.std(ref_del_up_original)
+            
+            ref_down_original_p5 = np.percentile(ref_del_dn_original, 5)
+            ref_down_original_p50 = np.percentile(ref_del_dn_original, 50)
+            ref_down_original_p95 = np.percentile(ref_del_dn_original, 95)
+            ref_down_original_p99 = np.percentile(ref_del_dn_original, 99)
+            ref_down_original_std = np.std(ref_del_dn_original)
+            
+            # 打印参考样本反归一化后的统计特征
+            print("\n  参考样本统计特征（原始空间）：")
+            print(f"  上行延迟 - p5: {ref_up_original_p5:.4f} ms, p50: {ref_up_original_p50:.4f} ms, p95: {ref_up_original_p95:.4f} ms, p99: {ref_up_original_p99:.4f} ms, std: {ref_up_original_std:.4f} ms")
+            print(f"  下行延迟 - p5: {ref_down_original_p5:.4f} ms, p50: {ref_down_original_p50:.4f} ms, p95: {ref_down_original_p95:.4f} ms, p99: {ref_down_original_p99:.4f} ms, std: {ref_down_original_std:.4f} ms")
+        
         # 提取生成的上行延迟和下行延迟数据
-        gen_del_up = generated_samples_np[i, 0, :]  # 上行延迟（归一化后）
-        gen_del_dn = generated_samples_np[i, 1, :]  # 下行延迟（归一化后）
-        gen_loss_up = generated_samples_np[i, 2, :]  # 上行丢包率（归一化后）
-        gen_loss_dn = generated_samples_np[i, 3, :]  # 下行丢包率（归一化后）
+        gen_del_up_qt = generated_samples_np[i, 0, :]  # 上行延迟（QT归一化后）
+        gen_del_dn_qt = generated_samples_np[i, 1, :]  # 下行延迟（QT归一化后）
+        # 上行丢包率和下行丢包率暂时未使用
+        # gen_loss_up = generated_samples_np[i, 2, :]  # 上行丢包率
+        # gen_loss_dn = generated_samples_np[i, 3, :]  # 下行丢包率
         
-        # 计算统计特征 - 使用双重归一化空间（QuantileTransformer + z-score）
-        gen_up_p5 = np.percentile(gen_del_up, 5)
-        gen_up_p50 = np.percentile(gen_del_up, 50)
-        gen_up_p95 = np.percentile(gen_del_up, 95)
-        gen_up_p99 = np.percentile(gen_del_up, 99)
-        gen_up_std = np.std(gen_del_up)
+        # 计算统计特征 - 使用QT归一化空间
+        gen_up_p5 = np.percentile(gen_del_up_qt, 5)
+        gen_up_p50 = np.percentile(gen_del_up_qt, 50)
+        gen_up_p95 = np.percentile(gen_del_up_qt, 95)
+        gen_up_p99 = np.percentile(gen_del_up_qt, 99)
+        gen_up_std = np.std(gen_del_up_qt)
         
-        gen_down_p5 = np.percentile(gen_del_dn, 5)
-        gen_down_p50 = np.percentile(gen_del_dn, 50)
-        gen_down_p95 = np.percentile(gen_del_dn, 95)
-        gen_down_p99 = np.percentile(gen_del_dn, 99)
-        gen_down_std = np.std(gen_del_dn)
+        gen_down_p5 = np.percentile(gen_del_dn_qt, 5)
+        gen_down_p50 = np.percentile(gen_del_dn_qt, 50)
+        gen_down_p95 = np.percentile(gen_del_dn_qt, 95)
+        gen_down_p99 = np.percentile(gen_del_dn_qt, 99)
+        gen_down_std = np.std(gen_del_dn_qt)
         
-        # 打印生成样本统计特征（双重归一化空间）
-        print("\n  生成样本统计特征（双重归一化空间：QuantileTransformer + z-score）：")
+        # 打印生成样本统计特征（QT归一化空间）
+        print("\n  生成样本统计特征（QT归一化空间）：")
         print(f"  上行延迟 - p5: {gen_up_p5:.4f}, p50: {gen_up_p50:.4f}, p95: {gen_up_p95:.4f}, p99: {gen_up_p99:.4f}, std: {gen_up_std:.4f}")
         print(f"  下行延迟 - p5: {gen_down_p5:.4f}, p50: {gen_down_p50:.4f}, p95: {gen_down_p95:.4f}, p99: {gen_down_p99:.4f}, std: {gen_down_std:.4f}")
         
-        # 计算丢包率统计
-        gen_loss_up_ratio = np.mean(gen_loss_up > 0.5)  # 假设0.5为阈值
-        gen_loss_dn_ratio = np.mean(gen_loss_dn > 0.5)
-        print(f"  丢包率 - 上行: {gen_loss_up_ratio:.4f}, 下行: {gen_loss_dn_ratio:.4f}")
-        
-        # 反归一化并打印实际值
-        if qt_up and qt_dn:
-            # 反归一化延迟值
-            gen_del_up_real = qt_up.inverse_transform(gen_del_up.reshape(-1, 1)).flatten()
-            gen_del_dn_real = qt_dn.inverse_transform(gen_del_dn.reshape(-1, 1)).flatten()
+        # 生成样本反归一化（QT空间 → 原始空间）
+        if qt_up is not None and qt_dn is not None:
+            # 将QT空间的时延数据转换回原始空间
+            gen_del_up_original = qt_up.inverse_transform(gen_del_up_qt.reshape(-1, 1)).flatten()
+            gen_del_dn_original = qt_dn.inverse_transform(gen_del_dn_qt.reshape(-1, 1)).flatten()
             
-            gen_up_p5_real = np.percentile(gen_del_up_real, 5)
-            gen_up_p50_real = np.percentile(gen_del_up_real, 50)
-            gen_up_p95_real = np.percentile(gen_del_up_real, 95)
-            gen_up_p99_real = np.percentile(gen_del_up_real, 99)
-            gen_up_std_real = np.std(gen_del_up_real)
+            # 计算反归一化后的统计特征
+            gen_up_original_p5 = np.percentile(gen_del_up_original, 5)
+            gen_up_original_p50 = np.percentile(gen_del_up_original, 50)
+            gen_up_original_p95 = np.percentile(gen_del_up_original, 95)
+            gen_up_original_p99 = np.percentile(gen_del_up_original, 99)
+            gen_up_original_std = np.std(gen_del_up_original)
             
-            gen_down_p5_real = np.percentile(gen_del_dn_real, 5)
-            gen_down_p50_real = np.percentile(gen_del_dn_real, 50)
-            gen_down_p95_real = np.percentile(gen_del_dn_real, 95)
-            gen_down_p99_real = np.percentile(gen_del_dn_real, 99)
-            gen_down_std_real = np.std(gen_del_dn_real)
+            gen_down_original_p5 = np.percentile(gen_del_dn_original, 5)
+            gen_down_original_p50 = np.percentile(gen_del_dn_original, 50)
+            gen_down_original_p95 = np.percentile(gen_del_dn_original, 95)
+            gen_down_original_p99 = np.percentile(gen_del_dn_original, 99)
+            gen_down_original_std = np.std(gen_del_dn_original)
             
-            print("\n  生成样本实际值（反归一化后）：")
-            print(f"  上行延迟 - p5: {gen_up_p5_real:.2f}ms, p50: {gen_up_p50_real:.2f}ms, p95: {gen_up_p95_real:.2f}ms, p99: {gen_up_p99_real:.2f}ms, std: {gen_up_std_real:.2f}ms")
-            print(f"  下行延迟 - p5: {gen_down_p5_real:.2f}ms, p50: {gen_down_p50_real:.2f}ms, p95: {gen_down_p95_real:.2f}ms, p99: {gen_down_p99_real:.2f}ms, std: {gen_down_std_real:.2f}ms")
+            # 打印生成样本反归一化后的统计特征
+            print("\n  生成样本统计特征（原始空间）：")
+            print(f"  上行延迟 - p5: {gen_up_original_p5:.4f} ms, p50: {gen_up_original_p50:.4f} ms, p95: {gen_up_original_p95:.4f} ms, p99: {gen_up_original_p99:.4f} ms, std: {gen_up_original_std:.4f} ms")
+            print(f"  下行延迟 - p5: {gen_down_original_p5:.4f} ms, p50: {gen_down_original_p50:.4f} ms, p95: {gen_down_original_p95:.4f} ms, p99: {gen_down_original_p99:.4f} ms, std: {gen_down_original_std:.4f} ms")
         
-        # 对比生成样本与参考样本的统计特征（均使用双重归一化空间：QuantileTransformer + z-score）
-        print("\n  统计特征对比（双重归一化空间：QuantileTransformer + z-score）：")
-        print(f"  上行延迟p10差异: {abs(gen_up_p5 - ref_cond[CondIndex.UP_P1]):.4f}")
-        print(f"  上行延迟p50差异: {abs(gen_up_p50 - ref_cond[CondIndex.UP_P50]):.4f}")
-        print(f"  上行延迟p95差异: {abs(gen_up_p95 - ref_cond[CondIndex.UP_P90]):.4f}")
-        print(f"  上行延迟p99差异: {abs(gen_up_p99 - ref_cond[CondIndex.UP_P99]):.4f}")
-        print(f"  下行延迟p10差异: {abs(gen_down_p5 - ref_cond[CondIndex.DN_P1]):.4f}")
-        print(f"  下行延迟p50差异: {abs(gen_down_p50 - ref_cond[CondIndex.DN_P50]):.4f}")
-        print(f"  下行延迟p95差异: {abs(gen_down_p95 - ref_cond[CondIndex.DN_P90]):.4f}")
-        print(f"  下行延迟p99差异: {abs(gen_down_p99 - ref_cond[CondIndex.DN_P99]):.4f}")
+        # 计算与参考样本的误差（QT归一化空间）
+        
+        # 计算上行延迟统计特征的绝对误差
+        up_p99_error = abs(gen_up_p99 - ref_cond[CondIndex.UP_P99])
+        up_p50_error = abs(gen_up_p50 - ref_cond[CondIndex.UP_P50])
+        
+        # 计算下行延迟统计特征的绝对误差
+        dn_p99_error = abs(gen_down_p99 - ref_cond[CondIndex.DN_P99])
+        dn_p50_error = abs(gen_down_p50 - ref_cond[CondIndex.DN_P50])
+        
+        print("\n  误差分析（QT归一化空间）：")
+        print(f"  上行延迟 - p50误差: {up_p50_error:.4f}, p99误差: {up_p99_error:.4f}")
+        print(f"  下行延迟 - p50误差: {dn_p50_error:.4f}, p99误差: {dn_p99_error:.4f}")
+        
+        # 保存参考样本信息，用于可视化
+        # 检查ref_cond的类型，如果已经是列表，直接使用；否则调用tolist()方法
+        cond_data = ref_cond.tolist() if hasattr(ref_cond, 'tolist') else ref_cond
+        reference_samples_info.append({
+            "behavior_id": behavior_id,
+            "window": window_list,
+            "cond": cond_data
+        })
     
-    # 10. 计算超限比例
-    print("\n9. 计算超限比例：")
-    if qt_up and len(selected_windows) > 0:
-        # 计算真实数据的反归一化p95值
-        p95_norm = np.array([window["cond"][2] for window in selected_windows])
-        true_p95_raw = qt_up.inverse_transform(p95_norm.reshape(-1, 1)).flatten()
-        
-        # 计算生成数据的反归一化p95值
-        gen_up_p95 = np.percentile(generated_samples_np[:, 0, :], 95, axis=1)
-        gen_up_p95_real = qt_up.inverse_transform(gen_up_p95.reshape(-1, 1)).flatten()
-        
-        # 计算超限比例：生成的上行延迟p95 > 真实p95值 * 1.1
-        over_limit_ratio = np.mean(gen_up_p95_real > true_p95_raw * 1.1)
-        
-        print(f"   生成数据上行延迟p95 > 真实p95 * 1.1的比例：{over_limit_ratio:.2%}")
-        if over_limit_ratio > 0.05:
-            print("   💡 警告：超限比例 > 5%，说明模型控制上限的能力需要改进。")
-        else:
-            print("   ✅ 超限比例 <= 5%，模型能够较好地控制上限。")
+    # 生成可视化图片
+    print("9. 生成可视化图片...")
+    import shutil
+    import numpy as np
+    # 创建可视化目录
+    visualization_dir = output_dir.parent / "visualization"
+    visualization_dir.mkdir(parents=True, exist_ok=True)
+    # 复制生成的样本到可视化目录
+    generated_samples_path = output_dir / "generated_samples.npy"
+    visualization_samples_path = visualization_dir / "generated_samples.npy"
+    shutil.copy(generated_samples_path, visualization_samples_path)
     
-    # 11. 添加可视化功能
-    print("\n10. 生成可视化结果：")
-    import matplotlib.pyplot as plt
+    # 保存参考样本信息到可视化目录，使用npy格式
+    reference_info_path = visualization_dir / "reference_samples_info.npz"
     
-    # 设置中文字体支持
-    plt.rcParams["font.sans-serif"] = ["Arial Unicode MS", "SimHei", "DejaVu Sans"]
-    plt.rcParams["axes.unicode_minus"] = False
+    # 提取参考样本的关键数据
+    behavior_ids = []
+    ref_conds = []
+    ref_trajectories = []
     
-    # 创建可视化输出目录
-    viz_dir = output_dir / "visualizations"
-    viz_dir.mkdir(parents=True, exist_ok=True)
-    
-    # 1. 绘制每个样本的延迟时间序列图（生成样本vs参考样本）
-    plt.figure(figsize=(15, 10))
-    for i in range(generated_samples_np.shape[0]):
-        # 获取生成的样本数据
-        gen_del_up = generated_samples_np[i, 0, :]  # 生成的上行延迟（归一化）
-        gen_del_dn = generated_samples_np[i, 1, :]  # 生成的下行延迟（归一化）
+    for sample_info in reference_samples_info:
+        behavior_ids.append(sample_info["behavior_id"])
+        ref_conds.append(sample_info["cond"])
         
-        # 获取对应的参考样本数据
-        window_meta = selected_windows[i]
-        ref_window = window_meta["window"]
-        state_id = int(window_meta["cond"][CondIndex.BEHAVIOR_ID])
+        # 提取参考轨迹数据
+        ref_window = sample_info["window"]
+        ref_up_delay = []
+        ref_down_delay = []
         
-        # 处理参考样本数据
-        if isinstance(ref_window, pd.DataFrame):
-            # 如果window是DataFrame，优先使用原始延迟数据
-            if "delay_up_origin" in ref_window.columns and "delay_down_origin" in ref_window.columns:
-                # 使用原始未归一化的延迟数据
-                ref_del_up = ref_window["delay_up_origin"].values  # 参考上行延迟（原始）
-                ref_del_dn = ref_window["delay_down_origin"].values  # 参考下行延迟（原始）
-            else:
-                # 备用方案：使用归一化后的数据进行反归一化
-                ref_del_up_norm = ref_window["del_up"].values  # 参考上行延迟（归一化）
-                ref_del_dn_norm = ref_window["del_dn"].values  # 参考下行延迟（归一化）
-                if qt_up and qt_dn:
-                    ref_del_up = qt_up.inverse_transform(ref_del_up_norm.reshape(-1, 1)).flatten()
-                    ref_del_dn = qt_dn.inverse_transform(ref_del_dn_norm.reshape(-1, 1)).flatten()
-                else:
-                    ref_del_up = ref_del_up_norm
-                    ref_del_dn = ref_del_dn_norm
-        else:
-            # 处理从JSONL加载的窗口数据
-            # 优先使用原始延迟数据，如果存在的话
-            if ref_window and isinstance(ref_window[0], dict):
-                if "delay_up_origin" in ref_window[0] and "delay_down_origin" in ref_window[0]:
-                    # 使用原始未归一化的延迟数据
-                    ref_del_up = np.array([row.get("delay_up_origin", 0.0) for row in ref_window[:100]])  # 参考上行延迟（原始）
-                    ref_del_dn = np.array([row.get("delay_down_origin", 0.0) for row in ref_window[:100]])  # 参考下行延迟（原始）
-                else:
-                    # 备用方案：使用归一化后的数据进行反归一化
-                    ref_del_up_norm = np.array([row.get("delay_up", 0.0) for row in ref_window[:100]])  # 参考上行延迟（归一化）
-                    ref_del_dn_norm = np.array([row.get("delay_down", 0.0) for row in ref_window[:100]])  # 参考下行延迟（归一化）
-                    if qt_up and qt_dn:
-                        ref_del_up = qt_up.inverse_transform(ref_del_up_norm.reshape(-1, 1)).flatten()
-                        ref_del_dn = qt_dn.inverse_transform(ref_del_dn_norm.reshape(-1, 1)).flatten()
-                    else:
-                        ref_del_up = ref_del_up_norm
-                        ref_del_dn = ref_del_dn_norm
-            else:
-                # 处理异常情况
-                ref_del_up = np.zeros_like(gen_del_up)
-                ref_del_dn = np.zeros_like(gen_del_dn)
+        for row in ref_window:
+            ref_up_delay.append(row["delay_up_qt"])
+            ref_down_delay.append(row["delay_down_qt"])
         
-        # 对生成样本进行反归一化
-        if qt_up and qt_dn:
-            gen_del_up = qt_up.inverse_transform(gen_del_up.reshape(-1, 1)).flatten()
-            gen_del_dn = qt_dn.inverse_transform(gen_del_dn.reshape(-1, 1)).flatten()
-            ylabel = "延迟 (ms)"
-        else:
-            ylabel = "归一化延迟"
-        
-        plt.subplot(generated_samples_np.shape[0], 1, i+1)
-        time_steps = np.arange(len(gen_del_up))
-        
-        # 绘制参考样本（原始数据）
-        plt.plot(time_steps, ref_del_up, label="参考上行延迟（原始）", color="blue", linestyle="--")
-        plt.plot(time_steps, ref_del_dn, label="参考下行延迟（原始）", color="red", linestyle="--")
-        
-        # 绘制生成样本（原始数据）
-        plt.plot(time_steps, gen_del_up, label="生成上行延迟（生成）", color="blue", linestyle="-")
-        plt.plot(time_steps, gen_del_dn, label="生成下行延迟（生成）", color="red", linestyle="-")
-        
-        plt.title(f"样本 {i+1} (state_id: {state_id}) 延迟时间序列（生成vs参考）")
-        plt.xlabel("时间步")
-        plt.ylabel(ylabel)
-        plt.grid(True)
-        plt.legend()
+        ref_trajectories.append([ref_up_delay, ref_down_delay])
     
-    # 保存时间序列图
-    ts_path = viz_dir / "delay_time_series.png"
-    plt.tight_layout()
-    plt.savefig(ts_path, dpi=300, bbox_inches="tight")
-    plt.close()
-    print(f"   延迟时间序列图已保存到：{ts_path}")
+    # 转换为numpy数组
+    behavior_ids = np.array(behavior_ids)
+    ref_conds = np.array(ref_conds)
+    ref_trajectories = np.array(ref_trajectories)
     
-    # 2. 绘制每个样本的丢包率时间序列图（生成样本vs参考样本）
-    plt.figure(figsize=(15, 10))
-    for i in range(generated_samples_np.shape[0]):
-        gen_loss_up = generated_samples_np[i, 2, :]  # 生成的上行丢包率
-        gen_loss_dn = generated_samples_np[i, 3, :]  # 生成的下行丢包率
-        
-        # 获取样本对应的state id和参考样本数据
-        window_meta = selected_windows[i]
-        ref_window = window_meta["window"]
-        state_id = int(window_meta["cond"][11])
-        
-        # 处理参考样本数据
-        if isinstance(ref_window, pd.DataFrame):
-            # 如果window是DataFrame，优先使用原始丢包率数据
-            if "loss_up_origin" in ref_window.columns and "loss_down_origin" in ref_window.columns:
-                # 使用原始未归一化的丢包率数据
-                ref_loss_up = ref_window["loss_up_origin"].values  # 参考上行丢包率（原始）
-                ref_loss_dn = ref_window["loss_down_origin"].values  # 参考下行丢包率（原始）
-            else:
-                # 备用方案：使用已处理的丢包率数据
-                ref_loss_up = ref_window["loss_up"].values  # 参考上行丢包率
-                ref_loss_dn = ref_window["loss_dn"].values  # 参考下行丢包率
-        else:
-            # 处理从JSONL加载的窗口数据
-            # 优先使用原始丢包率数据，如果存在的话
-            if ref_window and isinstance(ref_window[0], dict):
-                if "loss_up_origin" in ref_window[0] and "loss_down_origin" in ref_window[0]:
-                    # 使用原始未归一化的丢包率数据
-                    ref_loss_up = np.array([row.get("loss_up_origin", 0.0) for row in ref_window[:100]])  # 参考上行丢包率（原始）
-                    ref_loss_dn = np.array([row.get("loss_down_origin", 0.0) for row in ref_window[:100]])  # 参考下行丢包率（原始）
-                else:
-                    # 备用方案：使用已处理的丢包率数据
-                    ref_loss_up = np.array([row.get("loss_up", 0.0) for row in ref_window[:100]])  # 参考上行丢包率
-                    ref_loss_dn = np.array([row.get("loss_dn", 0.0) for row in ref_window[:100]])  # 参考下行丢包率
-            else:
-                # 处理异常情况
-                ref_loss_up = np.zeros_like(gen_loss_up)
-                ref_loss_dn = np.zeros_like(gen_loss_dn)
-        
-        plt.subplot(generated_samples_np.shape[0], 1, i+1)
-        time_steps = np.arange(len(gen_loss_up))
-        
-        # 绘制参考样本（原始丢包率，范围0-1）
-        plt.plot(time_steps, ref_loss_up, label="参考上行丢包率（原始）", color="green", linestyle="--")
-        plt.plot(time_steps, ref_loss_dn, label="参考下行丢包率（原始）", color="orange", linestyle="--")
-        
-        # 绘制生成样本（生成的丢包率，范围0-1）
-        plt.plot(time_steps, gen_loss_up, label="生成上行丢包率（生成）", color="green", linestyle="-")
-        plt.plot(time_steps, gen_loss_dn, label="生成下行丢包率（生成）", color="orange", linestyle="-")
-        
-        plt.title(f"样本 {i+1} (state_id: {state_id}) 丢包率时间序列（生成vs参考）")
-        plt.xlabel("时间步")
-        plt.ylabel("丢包率")
-        plt.grid(True)
-        plt.legend()
+    # 保存为npz文件，支持多个数组
+    np.savez(reference_info_path, 
+             behavior_ids=behavior_ids, 
+             ref_conds=ref_conds, 
+             ref_trajectories=ref_trajectories)
     
-    # 保存丢包率时间序列图
-    loss_ts_path = viz_dir / "loss_time_series.png"
-    plt.tight_layout()
-    plt.savefig(loss_ts_path, dpi=300, bbox_inches="tight")
-    plt.close()
-    print(f"   丢包率时间序列图已保存到：{loss_ts_path}")
-    
-    # 3. 绘制延迟分布直方图
-    plt.figure(figsize=(15, 8))
-    
-    # 准备数据
-    all_gen_del_up = generated_samples_np[:, 0, :].flatten()
-    all_gen_del_dn = generated_samples_np[:, 1, :].flatten()
-    all_gen_loss_up = generated_samples_np[:, 2, :].flatten()
-    all_gen_loss_dn = generated_samples_np[:, 3, :].flatten()
-    
-    # 如果有QuantileTransformer，使用反归一化后的数据
-    if qt_up and qt_dn:
-        all_gen_del_up = qt_up.inverse_transform(all_gen_del_up.reshape(-1, 1)).flatten()
-        all_gen_del_dn = qt_dn.inverse_transform(all_gen_del_dn.reshape(-1, 1)).flatten()
-        delay_xlabel = "延迟 (ms)"
-    else:
-        delay_xlabel = "归一化延迟"
-    
-    # 上行延迟分布
-    plt.subplot(2, 2, 1)
-    plt.hist(all_gen_del_up, bins=50, alpha=0.7, color="blue", label="生成上行延迟")
-    plt.title("上行延迟分布")
-    plt.xlabel(delay_xlabel)
-    plt.ylabel("频率")
-    plt.grid(True)
-    plt.legend()
-    
-    # 下行延迟分布
-    plt.subplot(2, 2, 2)
-    plt.hist(all_gen_del_dn, bins=50, alpha=0.7, color="red", label="生成下行延迟")
-    plt.title("下行延迟分布")
-    plt.xlabel(delay_xlabel)
-    plt.ylabel("频率")
-    plt.grid(True)
-    plt.legend()
-    
-    # 上行丢包率分布
-    plt.subplot(2, 2, 3)
-    plt.hist(all_gen_loss_up, bins=50, alpha=0.7, color="green", label="生成上行丢包率")
-    plt.title("上行丢包率分布")
-    plt.xlabel("归一化丢包率")
-    plt.ylabel("频率")
-    plt.grid(True)
-    plt.legend()
-    
-    # 下行丢包率分布
-    plt.subplot(2, 2, 4)
-    plt.hist(all_gen_loss_dn, bins=50, alpha=0.7, color="orange", label="生成下行丢包率")
-    plt.title("下行丢包率分布")
-    plt.xlabel("归一化丢包率")
-    plt.ylabel("频率")
-    plt.grid(True)
-    plt.legend()
-    
-    # 保存直方图
-    hist_path = viz_dir / "delay_loss_histograms.png"
-    plt.tight_layout()
-    plt.savefig(hist_path, dpi=300, bbox_inches="tight")
-    plt.close()
-    print(f"   延迟和丢包率直方图已保存到：{hist_path}")
-    
-    # 12. 保存配置
-    config_path = output_dir / "training_config.json"
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
-    print(f"\n11. 训练配置已保存到：{config_path}")
-    
-    # 13. 执行快速验证
-    quick_verify(model, sde, val_windows, device=device)
-    
-    print("\n=== CSDI模型训练与测试完成 ===")
-
-
-def quick_verify(model: CSDIModel, sde: SimpleSDE, val_windows: List[Dict[str, Any]], device: str = "cpu", train_windows: List[Dict[str, Any]] = None):
-    """快速验证生成样本的p99值是否接近期望的条件值
-    
-    Args:
-        model: 训练好的模型
-        sde: SDE对象
-        val_windows: 验证窗口列表
-        device: 设备
-    """
-    import random
-    print("\n=== 快速验证生成样本质量 ===")
-    
-    # 测试3个样本
-    for i in range(3):
-        if i >= len(val_windows):
-            break
-            
-        # 获取完整条件向量
-        full_cond = val_windows[i]["cond"]
-        cond_tensor = torch.tensor([full_cond], dtype=torch.float32)
-        
-        # 生成样本
-        sampled = generate_samples(model, sde, cond_tensor, num_inference_steps=50, device=device)
-        
-        # 计算生成样本的p99值
-        gen_p99 = np.percentile(sampled[0, 0, :].cpu().numpy(), 99)
-        expected_p99 = full_cond[CondIndex.UP_P99]  # 条件中的上行延迟p99
-        
-        # 打印结果
-        print(f"样本 {i+1}:")
-        print(f"  期望 p99: {expected_p99:.4f}")
-        print(f"  实际 p99: {gen_p99:.4f}")
-        print(f"  差距: {abs(gen_p99 - expected_p99):.4f}")
-        # 避免除以零，添加1e-8作为保护
-        if abs(expected_p99) < 1e-8:
-            print("  相对差距: N/A (期望p99接近零)")
-        else:
-            print(f"  相对差距: {abs(gen_p99 - expected_p99) / abs(expected_p99) * 100:.2f}%")
-        print()
-    
-    # 添加固定条件测试：测试低p99条件下的生成结果
-    print("=== 固定条件测试（低p99） ===")
-    if len(val_windows) > 0:
-        # 获取一个条件向量并修改其p99值为较低值
-        base_full_cond = val_windows[0]["cond"].copy()
-        
-        # 测试不同的低p99值
-        test_p99_values = [0.1, 0.5, 1.0]
-        
-        for test_p99 in test_p99_values:
-            # 设置低p99条件
-            modified_full_cond = base_full_cond.copy()
-            modified_full_cond[CondIndex.UP_P99] = test_p99  # 设置上行延迟p99为低数值
-            fixed_cond_tensor = torch.tensor([modified_full_cond], dtype=torch.float32)
-            
-            # 生成样本
-            sampled = generate_samples(model, sde, fixed_cond_tensor, num_inference_steps=50, device=device)
-            
-            # 计算生成样本的p99值
-            gen_p99 = np.percentile(sampled[0, 0, :].cpu().numpy(), 99)
-            
-            # 打印结果
-            print(f"固定条件测试（p99={test_p99:.1f}）:")
-            print(f"  期望 p99: {test_p99:.4f}")
-            print(f"  实际 p99: {gen_p99:.4f}")
-            print(f"  差距: {abs(gen_p99 - test_p99):.4f}")
-            print(f"  相对差距: {abs(gen_p99 - test_p99) / (abs(test_p99) + 1e-5) * 100:.2f}%")
-            print()
-    
-    # 相关性分析：测试多个条件下的生成结果
-    print("\n=== 条件相关性测试 ===")
-    if train_windows and len(train_windows) > 5:
-        # 选择5个不同p95条件的样本
-        selected_windows = random.sample(train_windows, min(5, len(train_windows)))
-        expected_p95_list = []
-        generated_p95_list = []
-        
-        for window_meta in selected_windows:
-            cond = window_meta["cond"]
-            cond_tensor = torch.tensor([cond], dtype=torch.float32)
-            
-            # 生成样本
-            sampled = generate_samples(model, sde, cond_tensor, num_inference_steps=50, device=device)
-            
-            # 计算生成样本的p95值
-            gen_p95 = np.percentile(sampled[0, 0, :].cpu().numpy(), 95)
-            expected_p95 = cond[2]  # 条件中的上行延迟p95
-            
-            expected_p95_list.append(expected_p95)
-            generated_p95_list.append(gen_p95)
-        
-        # 计算相关性
-        if len(expected_p95_list) >= 2:
-            correlation = np.corrcoef(expected_p95_list, generated_p95_list)[0, 1]
-            print(f"条件p95与生成p95的相关性: {correlation:.4f}")
-            print(f"条件p95范围: [{min(expected_p95_list):.4f}, {max(expected_p95_list):.4f}]")
-            print(f"生成p95范围: [{min(generated_p95_list):.4f}, {max(generated_p95_list):.4f}]")
-            print()
-            
-            # 简单判断
-            if correlation > 0.5:
-                print("✅ 条件与生成结果存在较强正相关")
-            elif correlation > 0.1:
-                print("⚠️ 条件与生成结果存在弱正相关")
-            else:
-                print("❌ 条件与生成结果几乎无相关")
-        print()
-
+    # 运行可视化脚本，传递正确的参考样本文件路径
+    import subprocess
+    subprocess.run(["uv", "run", "python", "scripts/step3_visualize.py", "--reference-file", str(reference_info_path)], check=True)
+    print(f"10. 可视化图片已生成到: {visualization_dir}")
 
 if __name__ == "__main__":
     main()
+
+
