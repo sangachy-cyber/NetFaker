@@ -975,9 +975,9 @@ def generate_samples(
     cond: torch.Tensor,
     num_inference_steps: int = 50,
     device: str = "cpu",
-    guidance_scale: float = 1.5  # CFG引导强度，降低到2.0适合uniform空间
+    base_guidance_scale: float = 1.5  # CFG引导强度，基础值
 ) -> torch.Tensor:
-    """生成样本
+    """生成样本，支持动态调整guidance_scale
     
     Args:
         model: 训练好的模型
@@ -985,16 +985,48 @@ def generate_samples(
         cond: [B, cond_dim] 条件向量
         num_inference_steps: 推理步数
         device: 采样设备
-        guidance_scale: CFG引导强度，范围[0, ∞)，默认3.0
+        base_guidance_scale: CFG引导强度基础值，范围[0, ∞)，默认1.5
     
     Returns:
         [B, 4, 100] 生成的样本
     """
-    print(f"[Debug] generate_samples - guidance_scale: {guidance_scale}")
+    # 动态调整guidance_scale
+    B = cond.shape[0]
+    adjusted_guidance_scale = base_guidance_scale
+    
+    # 计算所有样本的尾部长度，找出最大的那个
+    max_tail = 0.0
+    for sample_idx in range(B):
+        # 获取当前样本的条件向量
+        current_cond = cond[sample_idx]
+        
+        # 计算尾部长度
+        up_p50 = current_cond[CondIndex.UP_P50].item()
+        up_p99 = current_cond[CondIndex.UP_P99].item()
+        dn_p50 = current_cond[CondIndex.DN_P50].item()
+        dn_p99 = current_cond[CondIndex.DN_P99].item()
+        
+        up_tail = up_p99 - up_p50
+        dn_tail = dn_p99 - dn_p50
+        sample_max_tail = max(up_tail, dn_tail)
+        
+        if sample_max_tail > max_tail:
+            max_tail = sample_max_tail
+    
+    # 如果最大尾部长度超过阈值，降低guidance_scale
+    if max_tail > 0.2:  # 阈值可以调整
+        # 非线性调整：尾部越长，guidance_scale越低
+        adjusted_guidance_scale = base_guidance_scale * (1 - 0.5 * min(max_tail - 0.2, 0.5))
+        # 确保guidance_scale不会太低
+        adjusted_guidance_scale = max(1.0, adjusted_guidance_scale)
+    
+    print(f"[Debug] generate_samples - base_guidance_scale: {base_guidance_scale}")
+    print(f"[Debug] generate_samples - max_tail: {max_tail:.4f}")
+    print(f"[Debug] generate_samples - adjusted_guidance_scale: {adjusted_guidance_scale:.4f}")
     print(f"[Debug] generate_samples - cond mean: {cond.mean().item():.4f}, cond shape: {cond.shape}")
     
     sampler = CSDISampler(model, sde, device=device)
-    return sampler.sample(cond, num_inference_steps, guidance_scale)
+    return sampler.sample(cond, num_inference_steps, adjusted_guidance_scale)
 
 def parse_args():
     """解析命令行参数
