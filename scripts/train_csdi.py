@@ -500,7 +500,7 @@ class CSDITrainer:
         model: CSDIModel,
         sde: SimpleSDE,
         device: str = "cpu",
-        patience: int = 30,  # 增加耐心值到30，容忍30个epoch无改进
+        patience: int = 50,  # 增加耐心值到50，容忍50个epoch无改进
         min_epochs: int = 150,  # 最小训练轮数增加到150，确保模型充分学习
         delta: float = 1e-4  # 最小改进阈值，保持不变
     ):
@@ -570,7 +570,7 @@ class CSDITrainer:
             # 条件训练：使用真实条件
             pred_noise = self.model(perturbed_values, time_stamps, mask, cond)
         
-        # 原有 loss：噪声预测 MSE
+        # 标准MSE损失：噪声预测
         noise_loss = F.mse_loss(pred_noise[mask == 0], noise[mask == 0])
         
         # === 新增：用预测的噪声重建 x0（去噪估计）=== 
@@ -592,8 +592,8 @@ class CSDITrainer:
         # 移除输出裁剪，让模型自由生成，避免限制模型的表达能力
         # x0_pred = torch.clamp(x0_pred, min=-10.0, max=10.0)
         
-        # 基础噪声损失
-        noise_loss = F.mse_loss(pred_noise[mask == 0], noise[mask == 0])
+        # 基础噪声损失（已使用带权重的计算）
+        # 这里复用之前计算的noise_loss，不再重复计算
         
         # === 新增：分布感知损失（Distribution-Aware Loss）=== 
         # 总损失：只使用噪声损失，信任CSDI + cond引导
@@ -958,7 +958,7 @@ def train_csdi(
         num_behavior_ids=num_behavior_ids  # 固定为8个行为ID（0-7）
     )
     
-    sde = SimpleSDE()
+    sde = SimpleSDE(beta_min=0.1, beta_max=15.0)
     
     # 初始化训练器
     trainer = CSDITrainer(model, sde, device=device)
@@ -975,7 +975,7 @@ def generate_samples(
     cond: torch.Tensor,
     num_inference_steps: int = 50,
     device: str = "cpu",
-    guidance_scale: float = 2.0  # CFG引导强度，降低到2.0适合uniform空间
+    guidance_scale: float = 1.5  # CFG引导强度，降低到2.0适合uniform空间
 ) -> torch.Tensor:
     """生成样本
     
