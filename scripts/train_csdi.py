@@ -633,33 +633,8 @@ class CSDITrainer:
             print(f"MSE loss: {noise_loss.item():.4f}")
             print()
         
-        # 检查虚拟点处理（0.5%概率）
-        if torch.rand(1) < 0.005:
-            print("\n[Debug] 虚拟点处理检查：")
-            # 获取虚拟点位置 - 只有t=0.5（中间位置）
-            p50_pos = 50  # t=0.5
-            
-            # 打印第一个样本的虚拟点相关信息
-            print(f"样本1 - values[0, 0, {p50_pos}]: {values[0, 0, p50_pos].item():.4f} (up_delay_qt p50 at t=0.5)")
-            print(f"样本1 - values[0, 1, {p50_pos}]: {values[0, 1, p50_pos].item():.4f} (dn_delay_qt p50 at t=0.5)")
-            
-            print(f"样本1 - mask[0, 0, {p50_pos}]: {mask[0, 0, p50_pos].item()} (up_delay_qt p50 mask at t=0.5)")
-            print(f"样本1 - mask[0, 1, {p50_pos}]: {mask[0, 1, p50_pos].item()} (dn_delay_qt p50 mask at t=0.5)")
-            
-            print(f"样本1 - perturbed_values[0, 0, {p50_pos}]: {perturbed_values[0, 0, p50_pos].item():.4f} (up_delay_qt p50 扰动后 at t=0.5)")
-            print(f"样本1 - perturbed_values[0, 1, {p50_pos}]: {perturbed_values[0, 1, p50_pos].item():.4f} (dn_delay_qt p50 扰动后 at t=0.5)")
-            
-            # 检查是否相等（允许微小浮点误差）
-            is_up_p50_unchanged = torch.allclose(perturbed_values[0, 0, p50_pos], values[0, 0, p50_pos], atol=1e-6)
-            is_dn_p50_unchanged = torch.allclose(perturbed_values[0, 1, p50_pos], values[0, 1, p50_pos], atol=1e-6)
-            
-            print(f"样本1 - 虚拟点是否未被加噪: up_p50_t0.5={is_up_p50_unchanged}, dn_p50_t0.5={is_dn_p50_unchanged}")
-            
-            # 打印 x0_pred 的 debug 信息
-            print(f"样本1 - x0_pred[0, 0, {p50_pos}]: {x0_pred[0, 0, p50_pos].item():.4f} (x0_pred up_delay_qt at t=0.5)")
-            print(f"样本1 - x0_pred[0, 1, {p50_pos}]: {x0_pred[0, 1, p50_pos].item():.4f} (x0_pred dn_delay_qt at t=0.5)")
-            print()
-        
+
+
         return total_loss
     
     def validation_step(self, batch: Dict[str, torch.Tensor]) -> torch.Tensor:
@@ -1032,7 +1007,7 @@ def generate_samples(
     
     print(f"[Debug] generate_samples - base_guidance_scale: {base_guidance_scale}")
     print(f"[Debug] generate_samples - max_tail: {max_tail:.4f}")
-    print(f"[Debug] generate_samples - adjusted_guidance_scale: {adjusted_guidance_scale:.4f}")
+    print(f"[DEBUG] Using adjusted_guidance_scale: {adjusted_guidance_scale:.4f}")
     print(f"[Debug] generate_samples - cond mean: {cond.mean().item():.4f}, cond shape: {cond.shape}")
     
     sampler = CSDISampler(model, sde, device=device)
