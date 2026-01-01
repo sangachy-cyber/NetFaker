@@ -336,23 +336,33 @@ class CondIndex:
     定义条件向量中各统计特征和行为ID的索引位置
     条件向量共15维：1个behavior_id + 14个分位点特征
     """
+    # 行为ID
     BEHAVIOR_ID = 0
-    # 上行分位点（7个）
-    UP_P1 = 1    # 1%分位点
-    UP_P10 = 2   # 10%分位点
-    UP_P25 = 3   # 25%分位点
-    UP_P50 = 4   # 50%分位点
-    UP_P75 = 5   # 75%分位点
-    UP_P90 = 6   # 90%分位点
-    UP_P99 = 7   # 99%分位点
-    # 下行分位点（7个）
-    DN_P1 = 8    # 1%分位点
-    DN_P10 = 9   # 10%分位点
-    DN_P25 = 10  # 25%分位点
-    DN_P50 = 11  # 50%分位点
-    DN_P75 = 12  # 75%分位点
-    DN_P90 = 13  # 90%分位点
-    DN_P99 = 14  # 99%分位点
+    
+    # 上行分位点（7个: p1, p10, p25, p50, p75, p90, p99）
+    UP_P1, UP_P10, UP_P25, UP_P50, UP_P75, UP_P90, UP_P99 = 1, 2, 3, 4, 5, 6, 7
+    
+    # 下行分位点（7个: p1, p10, p25, p50, p75, p90, p99）
+    DN_P1, DN_P10, DN_P25, DN_P50, DN_P75, DN_P90, DN_P99 = 8, 9, 10, 11, 12, 13, 14
+    
+    # 别名映射，便于调试和理解
+    ALIAS_MAP = {
+        BEHAVIOR_ID: "behavior_id",
+        UP_P1: "up_p1",
+        UP_P10: "up_p10",
+        UP_P25: "up_p25",
+        UP_P50: "up_p50",
+        UP_P75: "up_p75",
+        UP_P90: "up_p90",
+        UP_P99: "up_p99",
+        DN_P1: "dn_p1",
+        DN_P10: "dn_p10",
+        DN_P25: "dn_p25",
+        DN_P50: "dn_p50",
+        DN_P75: "dn_p75",
+        DN_P90: "dn_p90",
+        DN_P99: "dn_p99"
+    }
 
 
 class NetworkTraceCSDIDataset(Dataset):
