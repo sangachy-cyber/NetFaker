@@ -952,7 +952,7 @@ def visualize_training_losses(losses_file, output_dir="./output/visualization"):
 def visualize_generated_samples(generated_samples_file, real_data_file, output_dir="./output/visualization"):
     """可视化生成的样本与真实数据的对比"""
     # 设置中文字体
-    plt.rcParams["font.sans-serif"] = ["Arial Unicode MS", "SimHei", "DejaVu Sans"]
+    plt.rcParams["font.sans-serif"] = ["WenQuanYi Zen Hei", "Arial Unicode MS", "SimHei", "DejaVu Sans"]
     plt.rcParams["axes.unicode_minus"] = False
     # 加载生成的样本
     generated_samples = np.load(generated_samples_file)

@@ -20,7 +20,7 @@ from sklearn.decomposition import PCA
 # 设置中文字体支持，确保中文能正常显示
 plt.rcParams.update({
     'font.family': 'sans-serif',
-    'font.sans-serif': ['PingFang SC', 'Helvetica Neue', 'Arial', 'DejaVu Sans'],
+    'font.sans-serif': ['WenQuanYi Zen Hei', 'PingFang SC', 'Helvetica Neue', 'Arial', 'DejaVu Sans'],
     'axes.unicode_minus': False,
     'axes.labelsize': 12,
     'axes.titlesize': 14

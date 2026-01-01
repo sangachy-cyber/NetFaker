@@ -23,7 +23,7 @@ class ClusteringVisualizer:
         
         # 设置中文字体支持 - 优化字体配置，确保中文正常显示
         plt.rcParams['font.family'] = ['sans-serif']
-        plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'SimHei', 'Heiti TC', 'DejaVu Sans']
+        plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'Arial Unicode MS', 'SimHei', 'Heiti TC', 'DejaVu Sans']
         plt.rcParams['axes.unicode_minus'] = False
         plt.rcParams['figure.constrained_layout.use'] = True
     
@@ -334,13 +334,11 @@ class ClusteringVisualizer:
         
         # 反归一化函数
         def inverse_transform_delay(delays, qt_model, mean=0.0, std=1.0):
-            # 1. 先进行z-score反变换
-            delays_zscore_inv = delays * std + mean
-            # 2. 确保输入是二维数组
-            delays_2d = delays_zscore_inv.reshape(-1, 1)
-            # 3. 反QuantileTransformer变换
+            # 1. 直接确保输入是二维数组
+            delays_2d = delays.reshape(-1, 1)
+            # 2. 直接使用QuantileTransformer反变换
             inverse_delays = qt_model.inverse_transform(delays_2d)
-            # 4. 转换回一维数组
+            # 3. 转换回一维数组
             return inverse_delays.flatten()
         
         # 反归一化时延数据

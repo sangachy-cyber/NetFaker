@@ -11,7 +11,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 # 设置中文字体支持
-plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'SimHei', 'DejaVu Sans']
+plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'Arial Unicode MS', 'SimHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
 # 添加项目根目录到系统路径

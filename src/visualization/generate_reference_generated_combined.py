@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # 设置中文字体
-plt.rcParams["font.sans-serif"] = ["SimHei", "Arial Unicode MS", "DejaVu Sans"]
+plt.rcParams["font.sans-serif"] = ["WenQuanYi Zen Hei", "SimHei", "Arial Unicode MS", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
 # 加载参考样本的1000个点
@@ -103,21 +103,17 @@ def load_reference_1000_points(reference_file, qt_up, qt_down):
 def load_generated_1000_points(generated_file):
     """从生成样本中加载1000个点"""
     generated_samples = np.load(generated_file)
-    # 生成样本格式: (10, 100, 5)
-    # 特征0: 时间步（0-9.9）
-    # 特征1: 上行时延（实际值，毫秒）
-    # 特征2: 下行时延（实际值，毫秒）
-    # 特征3: 上行丢包率
-    # 特征4: 下行丢包率
+    # 生成样本格式: (3, 4, 100)
+    # 特征0: 上行时延（实际值，毫秒）
+    # 特征1: 下行时延（实际值，毫秒）
+    # 特征2: 上行丢包率
+    # 特征3: 下行丢包率
+    
+    # 目前只有3个样本，每个100个点，总共300个点
+    # 我们将其平铺为 (300, 4) 格式
+    all_points = generated_samples.reshape(-1, 4)
 
-    # 将(10, 100, 5)转换为(1000, 5)
-    all_points = generated_samples.reshape(-1, 5)
-
-    # 提取实际的时延值和丢包率，去掉时间步
-    # 转换为：上行时延(秒), 下行时延(秒), 上行丢包率, 下行丢包率
-    generated_samples_actual = all_points[:, 1:5]
-
-    return generated_samples_actual
+    return all_points
 
 # 生成参考样本和生成样本的1000点对比图
 def generate_combined_1000_points(reference_points, generated_points, output_path):

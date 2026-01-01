@@ -13,7 +13,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 # 设置中文字体支持
-plt.rcParams['font.sans-serif'] = ['Arial Unicode MS', 'SimHei', 'DejaVu Sans']
+plt.rcParams['font.sans-serif'] = ['WenQuanYi Zen Hei', 'Arial Unicode MS', 'SimHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False
 
 # 添加项目根目录到系统路径
@@ -35,19 +35,32 @@ def load_resources():
     with open(assets_dir / "qt_down.pkl", "rb") as f:
         qt_down = pickle.load(f)
     
-    # 加载z-score均值和标准差
-    delay_up_mean = np.load(assets_dir / "delay_up_mean.npy").item()
-    delay_up_std = np.load(assets_dir / "delay_up_std.npy").item()
-    delay_down_mean = np.load(assets_dir / "delay_down_mean.npy").item()
-    delay_down_std = np.load(assets_dir / "delay_down_std.npy").item()
+    # 优先加载基于QT归一化的z-score均值和标准差
+    try:
+        delay_up_qt_mean = np.load(assets_dir / "delay_up_qt_mean.npy")
+        delay_up_qt_std = np.load(assets_dir / "delay_up_qt_std.npy")
+        delay_down_qt_mean = np.load(assets_dir / "delay_down_qt_mean.npy")
+        delay_down_qt_std = np.load(assets_dir / "delay_down_qt_std.npy")
+    except FileNotFoundError:
+        # 如果找不到新文件，回退到旧文件
+        print("Warning: QT-based z-score parameters not found, falling back to old parameters.")
+        delay_up_qt_mean = np.load(assets_dir / "delay_up_mean.npy")
+        delay_up_qt_std = np.load(assets_dir / "delay_up_std.npy")
+        delay_down_qt_mean = np.load(assets_dir / "delay_down_mean.npy")
+        delay_down_qt_std = np.load(assets_dir / "delay_down_std.npy")
     
     return {
         "qt_up": qt_up,
         "qt_down": qt_down,
-        "delay_up_mean": delay_up_mean,
-        "delay_up_std": delay_up_std,
-        "delay_down_mean": delay_down_mean,
-        "delay_down_std": delay_down_std
+        "delay_up_qt_mean": delay_up_qt_mean,
+        "delay_up_qt_std": delay_up_qt_std,
+        "delay_down_qt_mean": delay_down_qt_mean,
+        "delay_down_qt_std": delay_down_qt_std,
+        # 保持向后兼容
+        "delay_up_mean": delay_up_qt_mean,
+        "delay_up_std": delay_up_qt_std,
+        "delay_down_mean": delay_down_qt_mean,
+        "delay_down_std": delay_down_qt_std
     }
 
 
@@ -89,24 +102,22 @@ def load_window_data():
 
 
 def inverse_transform_delay(delays, qt_model, mean=0.0, std=1.0):
-    """对时延数据进行反归一化，包括z-score反变换和QuantileTransformer反变换
+    """对时延数据进行反归一化，直接使用QuantileTransformer反变换
     
     Args:
-        delays: 归一化后的时延数据
+        delays: QT空间的时延数据
         qt_model: QuantileTransformer模型
-        mean: z-score均值
-        std: z-score标准差
+        mean: 已废弃参数，保持向后兼容
+        std: 已废弃参数，保持向后兼容
         
     Returns:
         np.array: 反归一化后的时延数据
     """
-    # 1. 先进行z-score反变换
-    delays_zscore_inv = delays * std + mean
-    # 2. 确保输入是二维数组
-    delays_2d = delays_zscore_inv.reshape(-1, 1)
-    # 3. 反QuantileTransformer变换
+    # 1. 确保输入是二维数组
+    delays_2d = delays.reshape(-1, 1)
+    # 2. 直接使用QuantileTransformer反变换
     inverse_delays = qt_model.inverse_transform(delays_2d)
-    # 4. 转换回一维数组
+    # 3. 转换回一维数组
     return inverse_delays.flatten()
 
 
