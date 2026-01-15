@@ -10,7 +10,7 @@ from src.preprocessing.processing import (
     fit_and_normalize
 )
 from src.preprocessing.features import (
-    compute_window_features, compute_local_features, merge_features, normalize_condition_vector
+    compute_window_features, normalize_condition_vector
 )
 
 
@@ -95,6 +95,8 @@ class TestProcessingFunctions:
         df = pd.DataFrame({
             "delay_up": [1.0, 2.0, 3.0, 4.0, 5.0],
             "delay_down": [5.0, 4.0, 3.0, 2.0, 1.0],
+            "delay_up_qt": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "delay_down_qt": [5.0, 4.0, 3.0, 2.0, 1.0],
             "loss_up": [0.0, 0.0, 0.0, 0.0, 0.0],
             "loss_dn": [0.0, 0.0, 0.0, 0.0, 0.0]
         })
@@ -102,10 +104,12 @@ class TestProcessingFunctions:
         features = compute_window_features(df)
         
         assert isinstance(features, np.ndarray)
-        assert features.shape == (13,)
-        assert features[0] == 3.0  # mean_delay_up
-        assert features[4] == 3.0  # mean_delay_down
+        assert features.shape == (15,)  # 1个行为ID + 7个up分位点 + 7个dn分位点
+        assert features[0] == 0.0  # 默认行为ID是0.0
+        assert features[1] <= features[7]  # up_p1 <= up_p99
+        assert features[8] <= features[14]  # dn_p1 <= dn_p99
     
+    @pytest.mark.skip(reason="compute_local_features函数已被移除")
     def test_compute_local_features(self):
         """测试局部特征计算"""
         df = pd.DataFrame({
@@ -121,6 +125,7 @@ class TestProcessingFunctions:
         assert features.shape == (10,)
         assert np.all(features == 0.0)  # 当前实现返回零向量
     
+    @pytest.mark.skip(reason="merge_features函数已被移除")
     def test_merge_features(self):
         """测试特征合并"""
         global_features = np.zeros(13)
@@ -134,18 +139,30 @@ class TestProcessingFunctions:
         assert np.all(merged[13:] == 1.0)
     
     def test_normalize_condition_vector(self):
-        """测试条件向量标准化"""
-        cond_vector = np.zeros(23)
-        cond_vector[11] = 1.0  # 网络状态ID
-        
-        cond_mean = np.zeros(22)
-        cond_std = np.ones(22)
-        
-        normalized = normalize_condition_vector(cond_vector, cond_mean, cond_std)
-        
+        """测试条件向量处理（直接返回，不再进行z-score标准化）"""
+        # 创建15维条件向量：1个行为ID + 7个up分位点 + 7个dn分位点
+        cond_vector = np.zeros(15)
+        cond_vector[0] = 1.0  # 网络状态ID（行为ID）
+        cond_vector[1:8] = np.arange(7)  # up分位点特征
+        cond_vector[8:15] = np.arange(7, 14)  # dn分位点特征
+
+        # 使用任意的QT归一化后的均值和标准差（现在这些参数已废弃）
+        delay_up_qt_mean = 3.0
+        delay_up_qt_std = 2.0
+        delay_down_qt_mean = 10.0
+        delay_down_qt_std = 3.0
+
+        normalized = normalize_condition_vector(
+            cond_vector,
+            delay_up_qt_mean, delay_up_qt_std,
+            delay_down_qt_mean, delay_down_qt_std
+        )
+
         assert isinstance(normalized, np.ndarray)
-        assert normalized.shape == (23,)
-        assert normalized[11] == 1.0  # 网络状态ID保持不变
+        assert normalized.shape == (15,)  # 15维条件向量
+        assert normalized[0] == 1.0  # 网络状态ID（行为ID）保持不变
+        assert np.all(normalized[1:8] == np.arange(7))  # up分位点特征直接返回，未标准化
+        assert np.all(normalized[8:15] == np.arange(7, 14))  # dn分位点特征直接返回，未标准化
     
     def test_mark_first_window(self):
         """测试标记首个窗口"""
@@ -249,13 +266,9 @@ class TestPipelineIntegration:
     
     def test_basic_pipeline(self):
         """测试基本流水线流程"""
-        # 创建测试数据
+        # 创建测试数据（只包含5列：timestamp, delay_up, delay_down, loss_up, loss_down）
         df = pd.DataFrame({
             "timestamp": [1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0],
-            "delay_up_origin": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0],
-            "delay_down_origin": [11.0, 10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0],
-            "loss_up_origin": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-            "loss_down_origin": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             "delay_up": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0],
             "delay_down": [11.0, 10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0],
             "loss_up": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],

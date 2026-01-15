@@ -31,22 +31,22 @@ class PatternIdentifier:
     def __init__(self):
         """初始化模式识别器，使用默认配置"""
         # 默认配置参数
-        self.STRONG_BURST_DELAY_THRESHOLD = 400
-        self.STRONG_BURST_LOSS_THRESHOLD = 0.25
-        self.STRONG_BURST_MIN_RUN = 15
-        self.INSTANT_SPIKE_DELAY_THRESHOLD = 800
-        self.INSTANT_SPIKE_LOSS_THRESHOLD = 0.8
-        self.INSTANT_SPIKE_MAX_COUNT = 5
-        self.INSTANT_SPIKE_MAX_RATIO = 0.1
-        self.WEAK_BURST_LOSS_NONZERO_RATIO = 0.3
+        self.STRONG_BURST_DELAY_THRESHOLD = 300
+        self.STRONG_BURST_LOSS_THRESHOLD = 0.2
+        self.STRONG_BURST_MIN_RUN = 10
+        self.INSTANT_SPIKE_DELAY_THRESHOLD = 600
+        self.INSTANT_SPIKE_LOSS_THRESHOLD = 0.7
+        self.INSTANT_SPIKE_MAX_COUNT = 10
+        self.INSTANT_SPIKE_MAX_RATIO = 0.2
+        self.WEAK_BURST_LOSS_NONZERO_RATIO = 0.25
         self.WEAK_BURST_MIN_CONDITIONS = 2
-        # 静态阈值（调整为更适合游戏场景）
-        self.DEFAULT_DELAY_MEAN_LOW = 80
-        self.DEFAULT_DELAY_MEAN_HIGH = 300
-        self.DEFAULT_DELAY_STD_HIGH = 200
-        self.DEFAULT_LOSS_MEAN_LOW = 0.05
-        self.DEFAULT_LOSS_MEAN_HIGH = 0.2
-        self.DEFAULT_LOSS_STD_HIGH = 0.1
+        # 静态阈值（调整为更适合游戏场景，放宽稳定状态条件）
+        self.DEFAULT_DELAY_MEAN_LOW = 100
+        self.DEFAULT_DELAY_MEAN_HIGH = 400
+        self.DEFAULT_DELAY_STD_HIGH = 250
+        self.DEFAULT_LOSS_MEAN_LOW = 0.1
+        self.DEFAULT_LOSS_MEAN_HIGH = 0.3
+        self.DEFAULT_LOSS_STD_HIGH = 0.15
     
     def identify(self, features_df: pd.DataFrame, raw_data_df: pd.DataFrame) -> Dict:
         """使用规则事件检测引擎识别网络行为模式
@@ -161,6 +161,14 @@ class PatternIdentifier:
         
         delay_mean, delay_std, loss_mean, loss_std = stats
         
+        # 计算变异系数
+        delay_cv = delay_std / delay_mean if delay_mean > 0 else 0
+        loss_cv = loss_std / loss_mean if loss_mean > 0 else 0
+        
+        # 计算最大值
+        delay_max = np.max(delays) if len(delays) > 0 else 0
+        loss_max = np.max(loss_rates) if len(loss_rates) > 0 else 0
+        
         # 按行为严重性从高到低检测
         # 1. 瞬时峰值 (INSTANT_SPIKE)
         if self._detect_instant_spike(delays, loss_rates):
@@ -168,10 +176,10 @@ class PatternIdentifier:
         
         # 2. 低延迟高丢包 (LOW_DELAY_HIGH_LOSS)
         if (
-            delay_mean < thresholds["delay_mean_low"] * 0.8 and 
-            loss_mean > thresholds["loss_mean_high"] * 1.2 and 
+            delay_mean < thresholds["delay_mean_low"] * 1.2 and 
+            loss_mean > thresholds["loss_mean_high"] * 1.0 and 
             delay_mean > 0 and 
-            loss_mean > 0.1
+            loss_mean > 0.05
         ):
             return BEHAVIOR_LABELS["LOW_DELAY_HIGH_LOSS"]
         
@@ -181,64 +189,59 @@ class PatternIdentifier:
         
         # 4. 持续高丢包 (HIGH_LOSS_STEADY)
         if (
-            loss_mean > thresholds["loss_mean_high"] and 
-            loss_std < thresholds["loss_std_high"]
+            loss_mean > thresholds["loss_mean_high"] * 0.8 and 
+            loss_std < thresholds["loss_std_high"] * 1.2
         ):
             return BEHAVIOR_LABELS["HIGH_LOSS_STEADY"]
         
         # 5. 高延迟无丢包 (HIGH_DELAY_NO_LOSS)
         if (
-            delay_mean > thresholds["delay_mean_high"] and 
-            loss_mean <= thresholds["loss_mean_low"]
+            delay_mean > thresholds["delay_mean_high"] * 0.8 and 
+            loss_mean <= thresholds["loss_mean_low"] * 1.5
         ):
             return BEHAVIOR_LABELS["HIGH_DELAY_NO_LOSS"]
         
         # 6. 频繁波动 (FREQUENT_FLUCTUATION)
-        delay_cv = delay_std / delay_mean if delay_mean > 0 else 0
-        loss_cv = loss_std / loss_mean if loss_mean > 0 else 0
-        delay_cv_threshold = 0.5
-        loss_cv_threshold = 1.0
+        delay_cv_threshold = 0.4
+        loss_cv_threshold = 0.8
         
-        # 重新调整分类逻辑，从最不稳定到最稳定依次判断
-        
-        # 9. 频繁波动判断（最不稳定）
         frequent_fluctuation = (
             delay_cv > delay_cv_threshold or 
             loss_cv > loss_cv_threshold or
-            delay_std > thresholds["delay_std_high"] / 1.2 or 
-            loss_std > thresholds["loss_std_high"] / 1.2
+            delay_std > thresholds["delay_std_high"] / 1.5 or 
+            loss_std > thresholds["loss_std_high"] / 1.5
         )
         
         if frequent_fluctuation:
             return BEHAVIOR_LABELS["FREQUENT_FLUCTUATION"]
         
-        # 10. 弱突发判断
-        # 弱突发条件：存在一定波动但尚未达到频繁波动
+        # 7. 弱突发判断
         weak_burst = (
-            (loss_mean > thresholds["loss_mean_low"] * 1.2 and loss_mean < thresholds["loss_mean_high"] * 0.8) or
-            (delay_std > thresholds["delay_std_high"] / 3.5 and delay_std <= thresholds["delay_std_high"] / 1.2) or
-            (loss_std > thresholds["loss_std_high"] / 3.5 and loss_std <= thresholds["loss_std_high"] / 1.2)
+            (loss_mean > thresholds["loss_mean_low"] * 0.8 and loss_mean < thresholds["loss_mean_high"] * 1.2) or
+            (delay_std > thresholds["delay_std_high"] / 4.0 and delay_std <= thresholds["delay_std_high"] / 1.5) or
+            (loss_std > thresholds["loss_std_high"] / 4.0 and loss_std <= thresholds["loss_std_high"] / 1.5) or
+            (delay_max > self.STRONG_BURST_DELAY_THRESHOLD * 0.4) or
+            (loss_max > self.STRONG_BURST_LOSS_THRESHOLD * 0.4)
         )
         
         if weak_burst:
             return BEHAVIOR_LABELS["WEAK_BURST"]
         
-        # 11. 稳定行为判断（最稳定）
-        # 稳定状态条件：严格的低丢包、低时延、低波动
+        # 8. 稳定行为判断（最稳定）
+        # 放宽稳定状态的判断条件，确保只有真正稳定的窗口才被标记为稳定
         stable = (
-            loss_mean <= thresholds["loss_mean_low"] * 1.2 and 
-            delay_mean < thresholds["delay_mean_high"] * 0.6 and
-            delay_std < thresholds["delay_std_high"] / 4.0 and 
-            loss_std < thresholds["loss_std_high"] / 4.0 and 
-            # 严格的峰值检测：窗口内没有明显的峰值
-            np.max(delays) < self.STRONG_BURST_DELAY_THRESHOLD * 0.3 and
-            np.max(loss_rates) < self.STRONG_BURST_LOSS_THRESHOLD * 0.3
+            loss_mean <= thresholds["loss_mean_low"] * 1.5 and 
+            delay_mean < thresholds["delay_mean_high"] * 0.8 and
+            delay_std < thresholds["delay_std_high"] / 3.0 and 
+            loss_std < thresholds["loss_std_high"] / 3.0 and 
+            delay_max < self.STRONG_BURST_DELAY_THRESHOLD * 0.4 and
+            loss_max < self.STRONG_BURST_LOSS_THRESHOLD * 0.4
         )
         
         if stable:
             return BEHAVIOR_LABELS["STABLE"]
         
-        # 12. 其他情况默认返回弱突发（接近稳定但又不完全稳定的状态）
+        # 9. 其他情况默认返回弱突发（接近稳定但又不完全稳定的状态）
         return BEHAVIOR_LABELS["WEAK_BURST"]
     
     def _perform_rule_based_detection(

@@ -46,6 +46,11 @@ class DataSaver:
             with open(self.assets_dir / "qt_down.pkl", "wb") as f:
                 pickle.dump(assets["qt_down"], f)
         
+        # 保存按行为ID分组的QuantileTransformer字典
+        if "qt_dict" in assets and assets["qt_dict"] is not None:
+            with open(self.assets_dir / "qt_dict.pkl", "wb") as f:
+                pickle.dump(assets["qt_dict"], f)
+        
         # 保存条件向量标准化参数
         if "cond_mean" in assets:
             np.save(self.meta_dir / "cond_mean.npy", assets["cond_mean"].astype(self.dtype))
@@ -66,22 +71,7 @@ class DataSaver:
             np.save(self.assets_dir / "mean_loss_cat2_dn.npy", 
                     np.array(assets["mean_loss_cat2_dn"]).astype(self.dtype))
         
-        # 保存z-score均值和标准差
-        if "delay_up_mean" in assets:
-            np.save(self.assets_dir / "delay_up_mean.npy", 
-                    np.array(assets["delay_up_mean"]).astype(self.dtype))
-        
-        if "delay_up_std" in assets:
-            np.save(self.assets_dir / "delay_up_std.npy", 
-                    np.array(assets["delay_up_std"].astype(self.dtype)))
-        
-        if "delay_down_mean" in assets:
-            np.save(self.assets_dir / "delay_down_mean.npy", 
-                    np.array(assets["delay_down_mean"]).astype(self.dtype))
-        
-        if "delay_down_std" in assets:
-            np.save(self.assets_dir / "delay_down_std.npy", 
-                    np.array(assets["delay_down_std"].astype(self.dtype)))
+        # 不再保存z-score均值和标准差，QT归一化后的值直接作为模型输入
     
     def save_dataset(self, datasets: Dict[str, List[Dict]]):
         """保存数据集
