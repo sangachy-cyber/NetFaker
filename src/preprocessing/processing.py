@@ -6,19 +6,22 @@ import numpy as np
 import pandas as pd
 
 from .features import compute_window_features
-from sklearn.preprocessing import QuantileTransformer
+from sklearn.preprocessing import RobustScaler
 
 
 
-def parse_txt(txt_path: Path, interval_sec: float) -> pd.DataFrame:
+def parse_txt(txt_path: Path, interval_sec: float, file_config: Dict[str, str] = None) -> pd.DataFrame:
     """解析原始 txt 文件为标准化 DataFrame
     
     Args:
         txt_path: txt文件路径
         interval_sec: 间隔秒数
+        file_config: 文件对应的配置信息
         
     Returns:
-        标准化 DataFrame，包含列: [timestamp, delay_up_origin, delay_down_origin, loss_up_origin, loss_down_origin, delay_up, delay_down, loss_up, loss_down]
+        标准化 DataFrame，包含列: [timestamp, delay_up, delay_down, loss_up, loss_down, 
+                                    bandwidth_up, bandwidth_down, total_pkts_up, total_pkts_down,
+                                    loss_pkts_up, loss_pkts_down, send_pkts_up, send_pkts_down]
         
     Raises:
         ValueError: 当文件中找不到Start Time时抛出
@@ -34,23 +37,118 @@ def parse_txt(txt_path: Path, interval_sec: float) -> pd.DataFrame:
 
     # 解析数据行
     data_lines = lines[start_idx:]
-    timestamps, delay_up, loss_up, delay_down, loss_down = _parse_data_lines(
+    timestamps, delay_up, loss_up, delay_down, loss_down, bandwidth_up, bandwidth_down = _parse_data_lines(
         data_lines, start_timestamp, interval_sec
     )
 
-    # 构造 DataFrame，同时包含原始值和处理后的值
+    # 构造 DataFrame，包含原始值
     df = pd.DataFrame({
         "timestamp": timestamps,
-        "delay_up_origin": delay_up,
-        "delay_down_origin": delay_down,
-        "loss_up_origin": loss_up,
-        "loss_down_origin": loss_down,
-        # 初始值与原始值相同，后续会被归一化或二值化
-        "delay_up": delay_up,
-        "delay_down": delay_down,
-        "loss_up": loss_up,
-        "loss_down": loss_down,
+        "delay_up": delay_up,  # 原始上行延迟
+        "delay_down": delay_down,  # 原始下行延迟
+        "loss_up": loss_up,  # 原始上行丢包率
+        "loss_down": loss_down,  # 原始下行丢包率
+        "bandwidth_up": bandwidth_up,  # 原始上行带宽
+        "bandwidth_down": bandwidth_down,  # 原始下行带宽
     })
+
+    # 如果有配置文件，计算丢包数和发包数
+    if file_config:
+        # 解析配置信息
+        try:
+            # 提取配置信息
+            up_rate_kbps = float(file_config.get("上行速率", "0").replace(" Kbps", ""))
+            down_rate_kbps = float(file_config.get("下行速率", "0").replace(" Kbps", ""))
+            pkt_size = float(file_config.get("包大小(Byte)", "1500"))
+            sample_interval_str = file_config.get("采样间隔", "100")
+            sample_interval_ms = float(sample_interval_str.replace(" ms", ""))
+            
+            # 转换单位
+            up_rate_bps = up_rate_kbps * 1000  # Kbps -> bps
+            down_rate_bps = down_rate_kbps * 1000  # Kbps -> bps
+            sample_interval_s = sample_interval_ms / 1000  # ms -> s
+            pkt_size_bits = pkt_size * 8  # Byte -> bits
+            
+            # 计算每个周期的总包数
+            df["total_pkts_up"] = (up_rate_bps * sample_interval_s) / pkt_size_bits
+            df["total_pkts_down"] = (down_rate_bps * sample_interval_s) / pkt_size_bits
+            
+            # 确保总包数为正数
+            df["total_pkts_up"] = df["total_pkts_up"].clip(lower=1.0)
+            df["total_pkts_down"] = df["total_pkts_down"].clip(lower=1.0)
+            
+            # 计算丢包数和发包数
+            def find_best_packet_count(total_pkts, loss_rate):
+                """找到最接近原始丢包率的整数组合（发包数，丢包数）
+                
+                Args:
+                    total_pkts: 估算的总包数（浮点型）
+                    loss_rate: 原始丢包率
+                    
+                Returns:
+                    (send_pkts, loss_pkts): 发包数和丢包数的整数组合
+                """
+                # 基础发包数，使用四舍五入的整数
+                base_send = round(total_pkts)
+                
+                # 考虑附近的几个整数，寻找最优组合
+                best_error = float('inf')
+                best_send = base_send
+                best_loss = round(base_send * loss_rate)
+                
+                # 检查base_send附近的5个整数（避免极端情况）
+                for send_pkts in range(max(1, base_send - 2), base_send + 3):
+                    # 计算可能的丢包数
+                    loss_pkts = round(send_pkts * loss_rate)
+                    # 确保丢包数在合理范围内
+                    loss_pkts = max(0, min(loss_pkts, send_pkts))
+                    
+                    # 计算误差
+                    if send_pkts > 0:
+                        calc_loss_rate = loss_pkts / send_pkts
+                        error = abs(calc_loss_rate - loss_rate)
+                        
+                        # 找到误差最小的组合
+                        if error < best_error:
+                            best_error = error
+                            best_send = send_pkts
+                            best_loss = loss_pkts
+                
+                return best_send, best_loss
+            
+            # 对每个行计算最优的发包数和丢包数
+            df["send_pkts_up"] = 0
+            df["loss_pkts_up"] = 0
+            df["send_pkts_down"] = 0
+            df["loss_pkts_down"] = 0
+            
+            for i in range(len(df)):
+                # 上行
+                total_pkts_up = df.loc[i, "total_pkts_up"]
+                loss_up = df.loc[i, "loss_up"]
+                df.loc[i, "send_pkts_up"], df.loc[i, "loss_pkts_up"] = find_best_packet_count(total_pkts_up, loss_up)
+                
+                # 下行
+                total_pkts_down = df.loc[i, "total_pkts_down"]
+                loss_down = df.loc[i, "loss_down"]
+                df.loc[i, "send_pkts_down"], df.loc[i, "loss_pkts_down"] = find_best_packet_count(total_pkts_down, loss_down)
+        except Exception as e:
+            print(f"警告：解析配置文件 {txt_path} 时出错：{e}")
+            # 如果配置解析失败，添加默认值
+            df["total_pkts_up"] = 0.0
+            df["total_pkts_down"] = 0.0
+            df["send_pkts_up"] = 0
+            df["send_pkts_down"] = 0
+            df["loss_pkts_up"] = 0
+            df["loss_pkts_down"] = 0
+    else:
+        # 如果没有配置文件，添加默认值
+        df["total_pkts_up"] = 0.0
+        df["total_pkts_down"] = 0.0
+        df["send_pkts_up"] = 0
+        df["send_pkts_down"] = 0
+        df["loss_pkts_up"] = 0
+        df["loss_pkts_down"] = 0
 
     return df
 
@@ -108,7 +206,7 @@ def _parse_data_lines(
     data_lines: List[str], 
     start_timestamp: float, 
     interval_sec: float
-) -> Tuple[List[float], List[float], List[float], List[float], List[float]]:
+) -> Tuple[List[float], List[float], List[float], List[float], List[float], List[float], List[float]]:
     """解析数据行
     
     Args:
@@ -117,13 +215,15 @@ def _parse_data_lines(
         interval_sec: 间隔秒数
         
     Returns:
-        (timestamps, delay_up, loss_up, delay_down, loss_down) 五元组
+        (timestamps, delay_up, loss_up, delay_down, loss_down, bandwidth_up, bandwidth_down) 七元组
     """
     timestamps = []
     delay_up = []
     loss_up = []
     delay_down = []
     loss_down = []
+    bandwidth_up = []
+    bandwidth_down = []
 
     for i, line in enumerate(data_lines):
         if not line.strip():
@@ -136,14 +236,16 @@ def _parse_data_lines(
         # 解析单行数据
         parsed_data = _parse_single_line(parts, start_timestamp, i, interval_sec)
         if parsed_data is not None:
-            ts, du, lu, dd, ld = parsed_data
+            ts, du, lu, dd, ld, bu, bd = parsed_data
             timestamps.append(ts)
             delay_up.append(du)
             loss_up.append(lu)
             delay_down.append(dd)
             loss_down.append(ld)
+            bandwidth_up.append(bu)
+            bandwidth_down.append(bd)
 
-    return timestamps, delay_up, loss_up, delay_down, loss_down
+    return timestamps, delay_up, loss_up, delay_down, loss_down, bandwidth_up, bandwidth_down
 
 
 def _parse_single_line(
@@ -151,7 +253,7 @@ def _parse_single_line(
     start_timestamp: float, 
     line_idx: int, 
     interval_sec: float
-) -> Tuple[float, float, float, float, float] or None:
+) -> Tuple[float, float, float, float, float, float, float] or None:
     """解析单行数据
     
     Args:
@@ -192,7 +294,7 @@ def _parse_single_line(
     loss_up_val = 1.0 if bandwidth1 == 0 else loss1_percent / 100.0
     loss_down_val = 1.0 if bandwidth2 == 0 else loss2_percent / 100.0
 
-    return timestamp, delay_up_val, loss_up_val, delay_down_val, loss_down_val
+    return timestamp, delay_up_val, loss_up_val, delay_down_val, loss_down_val, bandwidth1, bandwidth2
 
 
 def clean_and_truncate(df: pd.DataFrame, max_delay_ms: int) -> pd.DataFrame:
@@ -214,10 +316,10 @@ def clean_and_truncate(df: pd.DataFrame, max_delay_ms: int) -> pd.DataFrame:
     df.loc[(df["loss_up"] < 0) | (df["loss_up"] > 1), "loss_up"] = np.nan
     df.loc[(df["loss_down"] < 0) | (df["loss_down"] > 1), "loss_down"] = np.nan
 
-    # 从前往后扫描，首次出现 delay_up_origin ≥ max_delay_ms 或 delay_down_origin ≥ max_delay_ms → 丢弃该行及之后所有行
+    # 从前往后扫描，首次出现 delay_up ≥ max_delay_ms 或 delay_down ≥ max_delay_ms → 丢弃该行及之后所有行
     truncate_idx = len(df)
     for i in range(len(df)):
-        if df.iloc[i]["delay_up_origin"] >= max_delay_ms or df.iloc[i]["delay_down_origin"] >= max_delay_ms:
+        if df.iloc[i]["delay_up"] >= max_delay_ms or df.iloc[i]["delay_down"] >= max_delay_ms:
             truncate_idx = i
             break
 
@@ -316,18 +418,23 @@ def resample_segment(segment: pd.DataFrame, freq_hz: int, max_invalid_ratio: flo
     resampled = segment.resample(target_freq).asfreq()
 
     # 对原始延迟使用线性插值
-    resampled["delay_up_origin"] = resampled["delay_up_origin"].interpolate(method="linear")
-    resampled["delay_down_origin"] = resampled["delay_down_origin"].interpolate(method="linear")
-    # 对归一化延迟使用线性插值
     resampled["delay_up"] = resampled["delay_up"].interpolate(method="linear")
     resampled["delay_down"] = resampled["delay_down"].interpolate(method="linear")
 
     # 对原始丢包率使用前向填充
-    resampled["loss_up_origin"] = resampled["loss_up_origin"].ffill().bfill()
-    resampled["loss_down_origin"] = resampled["loss_down_origin"].ffill().bfill()
-    # 对归一化丢包率使用前向填充
     resampled["loss_up"] = resampled["loss_up"].ffill().bfill()
     resampled["loss_down"] = resampled["loss_down"].ffill().bfill()
+    
+    # 处理新添加的列
+    if "bandwidth_up" in resampled.columns:
+        # 对带宽使用前向填充
+        resampled["bandwidth_up"] = resampled["bandwidth_up"].ffill().bfill()
+        resampled["bandwidth_down"] = resampled["bandwidth_down"].ffill().bfill()
+        
+        # 对总包数、发包数和丢包数使用前向填充
+        for col in ["total_pkts_up", "total_pkts_down", "send_pkts_up", "send_pkts_down", "loss_pkts_up", "loss_pkts_down"]:
+            if col in resampled.columns:
+                resampled[col] = resampled[col].ffill().bfill()
     
     # 检查非法值比例：loss ∉ [0,1]
     invalid_up = ((resampled["loss_up"] < 0) | (resampled["loss_up"] > 1)).sum()
@@ -479,8 +586,9 @@ def fit_and_normalize(
 ) -> Tuple[Dict[str, List[Dict]], Dict]:
     """拟合并标准化数据
     
-    使用训练集数据拟合QuantileTransformer，然后对所有数据集应用标准化变换。
-    对归一化后的时延数据进行z-score处理，确保统一的均值和标准差。
+    使用训练集数据拟合RobustScaler，然后对所有数据集应用标准化变换。
+    基于行为ID和方向（上行/下行）进行鲁棒性归一化，共需要16个归一化器：
+    8个有效行为ID × 2个方向（上行/下行）。
     
     Args:
         train: 训练集
@@ -495,110 +603,121 @@ def fit_and_normalize(
         ValueError: 当训练集为空时抛出
     """
     # 收集所有训练数据用于拟合
-    train_windows = [meta["window"] for meta in train]
-    if not train_windows:
+    if not train:
         raise ValueError("训练集为空")
 
-    # 提取特征用于拟合 QuantileTransformer
-    train_features_list = []
-    for window_df in train_windows:
-        # 提取原始延迟特征用于拟合
-        delays_up = window_df["delay_up_origin"].values
-        delays_down = window_df["delay_down_origin"].values
-        train_features_list.append(np.column_stack([delays_up, delays_down]))
-
-    train_features = np.vstack(train_features_list)
-
-    # 拟合 QuantileTransformer
-    qt_up = QuantileTransformer(
-        output_distribution="normal",
-        random_state=random_state,
-        n_quantiles=min(1000, len(train_features)),
-        subsample=min(100000, len(train_features)),
-    )
-    qt_up.fit(train_features[:, 0].reshape(-1, 1))
-
-    qt_down = QuantileTransformer(
-        output_distribution="normal",
-        random_state=random_state,
-        n_quantiles=min(1000, len(train_features)),
-        subsample=min(100000, len(train_features)),
-    )
-    qt_down.fit(train_features[:, 1].reshape(-1, 1))
-
-    # 先对训练集应用QuantileTransformer，收集数据计算z-score的mean和std
-    train_normalized_delays_up = []
-    train_normalized_delays_down = []
-    for window_df in train_windows:
-        delays_up = qt_up.transform(window_df["delay_up_origin"].values.reshape(-1, 1)).flatten()
-        delays_down = qt_down.transform(window_df["delay_down_origin"].values.reshape(-1, 1)).flatten()
-        train_normalized_delays_up.extend(delays_up)
-        train_normalized_delays_down.extend(delays_down)
+    # 1. 按行为ID和方向分组训练数据
+    # 准备存储分组数据的字典
+    train_data_grouped = {}
+    for behavior_id in range(8):  # 0-7共8个有效行为ID
+        train_data_grouped[f"up_{behavior_id}"] = []
+        train_data_grouped[f"down_{behavior_id}"] = []
     
-    # 计算z-score所需的均值和标准差
-    delay_up_mean = np.mean(train_normalized_delays_up)
-    delay_up_std = np.std(train_normalized_delays_up)
-    delay_down_mean = np.mean(train_normalized_delays_down)
-    delay_down_std = np.std(train_normalized_delays_down)
-    
-    # 避免除零错误
-    delay_up_std = max(delay_up_std, 1e-8)
-    delay_down_std = max(delay_down_std, 1e-8)
+    # 收集训练数据，按行为ID和方向分组
+    for meta in train:
+        window_df = meta["window"]
+        behavior_id = meta.get("behavior_id", 0)  # 默认使用0号行为ID
+        if behavior_id >= 8:  # 跳过INVALID行为
+            continue
+        
+        # 提取原始延迟特征
+        delays_up = window_df["delay_up"].values
+        delays_down = window_df["delay_down"].values
+        
+        # 添加到对应的分组
+        train_data_grouped[f"up_{behavior_id}"].append(delays_up)
+        train_data_grouped[f"down_{behavior_id}"].append(delays_down)
 
-    # 处理数据集
+    # 2. 拟合16个RobustScaler
+    rs_dict = {}
+    
+    for behavior_id in range(8):
+        # 拟合上行归一化器
+        up_key = f"up_{behavior_id}"
+        up_data = np.concatenate(train_data_grouped[up_key]) if train_data_grouped[up_key] else np.array([[0.0]])
+        
+        rs_up = RobustScaler()
+        rs_up.fit(up_data.reshape(-1, 1))
+        rs_dict[up_key] = rs_up
+        
+        # 拟合下行归一化器
+        down_key = f"down_{behavior_id}"
+        down_data = np.concatenate(train_data_grouped[down_key]) if train_data_grouped[down_key] else np.array([[0.0]])
+        
+        rs_down = RobustScaler()
+        rs_down.fit(down_data.reshape(-1, 1))
+        rs_dict[down_key] = rs_down
+
+    # 3. 处理数据集的辅助函数
     def process_dataset(dataset):
         renamed_metas = []
         for meta in dataset:
             window_df = meta["window"].copy()
-
-            # 使用原始延迟列进行归一化
-            normalized_up = qt_up.transform(window_df["delay_up_origin"].values.reshape(-1, 1)).flatten()
-            normalized_down = qt_down.transform(window_df["delay_down_origin"].values.reshape(-1, 1)).flatten()
+            behavior_id = meta.get("behavior_id", 0)  # 默认使用0号行为ID
+            if behavior_id >= 8:  # 处理INVALID行为，使用默认行为ID
+                behavior_id = 0
             
-            # 保存QuantileTransformer归一化结果，用于条件特征计算
-            window_df["delay_up_qt"] = normalized_up
-            window_df["delay_down_qt"] = normalized_down
+            # 检查窗口内的延迟是否恒定（标准差为0）
+            window_std_up = window_df['delay_up'].std()
+            window_std_down = window_df['delay_down'].std()
             
-            # 应用z-score标准化，用于模型训练
-            window_df["delay_up"] = (normalized_up - delay_up_mean) / delay_up_std
-            window_df["delay_down"] = (normalized_down - delay_down_mean) / delay_down_std
+            # 如果上行或下行延迟在窗口内是恒定的，则跳过此窗口
+            if window_std_up == 0 or window_std_down == 0:
+                continue  # 跳过这个无效窗口
+            
+            # 提取原始延迟列
+            raw_delay_up = window_df["delay_up"].values
+            raw_delay_down = window_df["delay_down"].values
+            
+            # 选择对应的归一化器
+            rs_up = rs_dict[f"up_{behavior_id}"]
+            rs_down = rs_dict[f"down_{behavior_id}"]
+            
+            # 应用归一化
+            delay_up_rs = rs_up.transform(raw_delay_up.reshape(-1, 1)).flatten()
+            delay_down_rs = rs_down.transform(raw_delay_down.reshape(-1, 1)).flatten()
+            
+            # 保存RobustScaler归一化结果，用于条件特征计算
+            window_df["delay_up_rs"] = delay_up_rs
+            window_df["delay_down_rs"] = delay_down_rs
+            
+            # 直接使用RobustScaler归一化结果作为模型训练数据
+            window_df["delay_up"] = delay_up_rs
+            window_df["delay_down"] = delay_down_rs
             
             # 重命名loss列
             window_df = window_df.rename(columns={
                 "loss_down": "loss_dn",
             })
 
-            # 构造新的元数据
+            # 构造新的元数据，保留behavior_id字段
             renamed_meta = {
                 "window": window_df,
                 "is_first": meta["is_first"],
                 "start_time": meta["start_time"],
                 "trace_id": meta["trace_id"],
+                "behavior_id": behavior_id  # 确保保留行为ID
             }
 
             renamed_metas.append(renamed_meta)
 
         return renamed_metas
 
-    # 处理所有数据集
+    # 4. 处理所有数据集
     train_renamed = process_dataset(train)
     val_renamed = process_dataset(val)
     test_renamed = process_dataset(test)
 
-    # 构造返回结果
+    # 5. 构造返回结果
     renamed_datasets = {
         "train": train_renamed,
         "val": val_renamed,
         "test": test_renamed,
     }
 
+    # 保存所有归一化器到assets中
     assets = {
-        "qt_up": qt_up,
-        "qt_down": qt_down,
-        "delay_up_mean": delay_up_mean,
-        "delay_up_std": delay_up_std,
-        "delay_down_mean": delay_down_mean,
-        "delay_down_std": delay_down_std,
+        "rs_dict": rs_dict,  # 保存所有16个归一化器
     }
 
     return renamed_datasets, assets

@@ -68,8 +68,18 @@ class PreprocessingPipeline:
         for txt_file in tqdm(txt_files, desc="Processing files"):
             stats["processed_files"] += 1
             try:
+                # 读取对应的配置文件
+                conf_file = Path("data/conf") / f"{txt_file.name}"
+                file_config = {}
+                if conf_file.exists():
+                    with open(conf_file, "r") as f:
+                        for line in f:
+                            if ":" in line:
+                                key, value = line.strip().split(":", 1)
+                                file_config[key] = value.strip()
+                
                 # 阶段1-5：解析、清洗、分割、提取窗口、标记首窗
-                file_result, raw_data = self._process_single_file(txt_file)
+                file_result, raw_data = self._process_single_file(txt_file, file_config)
                 if file_result:
                     all_windows_meta.extend(file_result)
                     all_raw_data.append(raw_data)
@@ -153,17 +163,18 @@ class PreprocessingPipeline:
             "stats": stats
         }
     
-    def _process_single_file(self, txt_file: Path) -> Tuple[List[Dict], pd.DataFrame]:
+    def _process_single_file(self, txt_file: Path, file_config: Dict[str, str]) -> Tuple[List[Dict], pd.DataFrame]:
         """处理单个文件
         
         Args:
             txt_file: 输入txt文件
+            file_config: 文件对应的配置信息
             
         Returns:
             (窗口元数据列表, 原始数据DataFrame) 二元组，若文件为空则返回空列表和空DataFrame
         """
         # 阶段1：解析原始txt文件
-        df_raw = parse_txt(txt_file, self.config["raw_interval_sec"])
+        df_raw = parse_txt(txt_file, self.config["raw_interval_sec"], file_config)
         
         # 阶段2：清洗并截断数据
         df_clean = clean_and_truncate(df_raw, self.config["max_delay_ms"])
@@ -291,6 +302,13 @@ class PreprocessingPipeline:
                 # 计算行为统计信息
                 import numpy as np
                 behavior_assets["behavior_stats"] = self.pattern_identifier._calculate_behavior_statistics(np.array(behavior_labels))
+                
+                # 打印行为ID分布，用于调试
+                from collections import Counter
+                behavior_counts = Counter(behavior_labels)
+                print(f"行为ID分布: {dict(behavior_counts)}")
+                print(f"行为ID列表: {sorted(list(behavior_counts.keys()))}")
+                
             except Exception as e:
                 print(f"行为发现模块执行失败，使用默认标签: {e}")
                 # 如果行为发现失败，使用默认标签
@@ -325,18 +343,8 @@ class PreprocessingPipeline:
         Returns:
             (final_datasets, extra_assets) 二元组
         """
-        # 从assets中获取delay_up和delay_down的z-score参数
-        delay_up_mean = assets["delay_up_mean"]
-        delay_up_std = assets["delay_up_std"]
-        delay_down_mean = assets["delay_down_mean"]
-        delay_down_std = assets["delay_down_std"]
-        
-        # 初始化extra_assets
+        # 初始化extra_assets，不再包含z-score参数
         extra_assets = {
-            "delay_up_mean": delay_up_mean,
-            "delay_up_std": delay_up_std,
-            "delay_down_mean": delay_down_mean,
-            "delay_down_std": delay_down_std,
             "mean_loss_cat2_up": 0.5,
             "mean_loss_cat2_dn": 0.5,
             "state_id_stats": {},
@@ -386,8 +394,7 @@ class PreprocessingPipeline:
                     network_state_id = meta.get("behavior_id", 0)
                     
                     normed_meta = self._process_single_window(
-                        meta, i, metas, network_state_id, 
-                        delay_up_mean, delay_up_std, delay_down_mean, delay_down_std
+                        meta, i, metas, network_state_id
                     )
                     normed_metas.append(normed_meta)
                     
@@ -404,8 +411,7 @@ class PreprocessingPipeline:
         return final_datasets, extra_assets
     
     def _process_single_window(
-        self, meta: Dict, i: int, metas: List[Dict], network_state_id: int,
-        delay_up_mean: float, delay_up_std: float, delay_down_mean: float, delay_down_std: float
+        self, meta: Dict, i: int, metas: List[Dict], network_state_id: int
     ) -> WindowMetaNormed:
         """处理单个窗口
         
@@ -414,10 +420,6 @@ class PreprocessingPipeline:
             i: 窗口索引
             metas: 同trace的所有窗口元数据
             network_state_id: 网络状态ID（来自行为发现模块）
-            delay_up_mean: 上行延迟的z-score均值
-            delay_up_std: 上行延迟的z-score标准差
-            delay_down_mean: 下行延迟的z-score均值
-            delay_down_std: 下行延迟的z-score标准差
             
         Returns:
             归一化后的窗口元数据
@@ -436,11 +438,8 @@ class PreprocessingPipeline:
         # 使用行为发现模块生成的网络状态ID，替换第0维
         global_features[0] = float(network_state_id)
         
-        # 直接使用全局特征作为条件向量
-        cond_vector = global_features.copy()
-        
-        # Z-score 标准化（使用delay_up和delay_down的z-score参数）
-        normalized_cond_vector = normalize_condition_vector(cond_vector, delay_up_mean, delay_up_std, delay_down_mean, delay_down_std)
+        # 使用全局特征作为条件向量，直接返回，不进行z-score标准化
+        normalized_cond_vector = normalize_condition_vector(global_features)
         
         # 构造归一化后的窗口元数据
         normed_meta: WindowMetaNormed = {
