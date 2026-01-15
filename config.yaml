@@ -23,7 +23,7 @@ quantile_transformer:
   subsample: 100000
 
 # network state extraction
-filename_pattern: ".*_state(\\d+)\\.txt"  # regex to extract network_state_id
+filename_pattern: '.*\.txt'  # regex to match all txt files
 default_network_state_id: 0
 
 output_dtype: "float32"

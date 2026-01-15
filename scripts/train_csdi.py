@@ -970,7 +970,6 @@ class CSDITrainer:
             factor=0.5,  # 学习率衰减因子
             patience=3,  # 3个epoch无改善则降低学习率
             min_lr=1e-6,  # 最小学习率
-            verbose=True,  # 打印学习率变化
         )
 
         for epoch in range(num_epochs):

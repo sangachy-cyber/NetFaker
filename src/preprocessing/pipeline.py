@@ -215,7 +215,8 @@ class PreprocessingPipeline:
         
         for txt_file in txt_files:
             match = re.search(pattern, txt_file.name)
-            network_state_map[txt_file.stem] = int(match.group(1)) if match else default_id
+            # 如果匹配且有捕获组，则使用捕获组的值，否则使用默认ID
+            network_state_map[txt_file.stem] = int(match.group(1)) if (match and len(match.groups()) > 0) else default_id
         
         return network_state_map
     
