@@ -5,10 +5,14 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from loguru import logger
 
 from netfaker.app.api import endpoints
 from netfaker.core.config import config
-from netfaker.core.logging import logger
+from netfaker.core.logger import setup_logger
+
+# 初始化日志系统（必须在 app 创建前调用）
+setup_logger()
 
 # 创建FastAPI应用实例
 app = FastAPI(

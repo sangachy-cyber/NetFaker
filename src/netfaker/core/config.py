@@ -3,6 +3,7 @@
 负责读取和管理项目的配置信息。
 """
 
+from pathlib import Path
 from pydantic_settings import BaseSettings
 
 
@@ -14,6 +15,8 @@ class NetFakerConfig(BaseSettings):
         host: 服务监听地址
         port: 服务监听端口
         log_level: 日志级别
+        log_to_file: 是否写入文件
+        log_dir: 日志目录路径
         data_dir: 数据目录路径
         holowan_api_url: HoloWAN API地址
         holowan_api_key: HoloWAN API密钥
@@ -26,6 +29,8 @@ class NetFakerConfig(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8000
     log_level: str = "INFO"
+    log_to_file: bool = True
+    log_dir: Path = Path("logs")
     data_dir: str = "data"
     
     # HoloWAN API 配置

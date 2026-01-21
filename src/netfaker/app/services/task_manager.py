@@ -12,7 +12,7 @@ from typing import Dict, Any, Optional
 
 from netfaker.app.database.task_db import TaskDatabase
 from netfaker.core.config import config
-from netfaker.core.logging import logger
+from loguru import logger
 from netfaker.simcore.generator import generate_simulation_params
 from netfaker.simcore.utils.holowan import HoloWANFile
 

@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from netfaker.app.api.schemas import SimulationRequest, TaskStatus
 from netfaker.app.services.task_manager import TaskManager
 from netfaker.core.config import config
-from netfaker.core.logging import logger
+from loguru import logger
 
 # 创建路由实例
 router = APIRouter()

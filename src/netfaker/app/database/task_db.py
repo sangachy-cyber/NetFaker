@@ -9,7 +9,7 @@ import sqlite3
 from datetime import datetime
 from typing import Dict, Any, Optional
 
-from netfaker.core.logging import logger
+from loguru import logger
 
 
 class TaskDatabase:

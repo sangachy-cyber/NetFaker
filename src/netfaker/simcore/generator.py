@@ -6,7 +6,7 @@
 from typing import Any, Dict
 
 from netfaker.core.exceptions import StrategyError
-from netfaker.core.logging import logger
+from loguru import logger
 
 # 导入所有策略（自动注册）
 from netfaker.simcore.strategy import strategy_registry
