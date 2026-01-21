@@ -5,14 +5,32 @@
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 from loguru import logger
 
 from netfaker.app.api import endpoints
 from netfaker.core.config import config
 from netfaker.core.logger import setup_logger
 
+
 # 初始化日志系统（必须在 app 创建前调用）
 setup_logger()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理器。
+    
+    处理应用的启动和关闭事件。
+    """
+    # 启动时执行
+    logger.info("NetFaker API服务启动成功")
+    logger.info(f"服务地址: http://{config.host}:{config.port}")
+    logger.info(f"调试模式: {'开启' if config.debug else '关闭'}")
+    yield
+    # 关闭时执行
+    logger.info("NetFaker API服务已关闭")
+
 
 # 创建FastAPI应用实例
 app = FastAPI(
@@ -20,6 +38,7 @@ app = FastAPI(
     description="网络仿真参数生成API",
     version="0.1.0",
     debug=config.debug,
+    lifespan=lifespan,
 )
 
 # 配置CORS
@@ -30,26 +49,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-async def startup_event():
-    """应用启动事件处理函数。
-
-    在应用启动时执行初始化操作。
-    """
-    logger.info("NetFaker API服务启动成功")
-    logger.info(f"服务地址: http://{config.host}:{config.port}")
-    logger.info(f"调试模式: {'开启' if config.debug else '关闭'}")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """应用关闭事件处理函数。
-
-    在应用关闭时执行清理操作。
-    """
-    logger.info("NetFaker API服务已关闭")
 
 
 # 根路径路由

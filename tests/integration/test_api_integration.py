@@ -12,10 +12,11 @@
 import os
 import time
 import pytest
-import requests
+from fastapi.testclient import TestClient
+from src.netfaker.app.main import app
 
-# API基础URL
-BASE_URL = "http://localhost:8000/api/v1"
+# 创建TestClient实例
+client = TestClient(app)
 
 
 class TestApiIntegration:
@@ -35,7 +36,7 @@ class TestApiIntegration:
         }
         
         # 发送请求
-        response = requests.post(f"{BASE_URL}/simulate", json=payload)
+        response = client.post("/api/v1/simulate", json=payload)
         
         # 验证响应
         assert response.status_code == 200, f"仿真任务提交失败: {response.status_code}"
@@ -59,7 +60,7 @@ class TestApiIntegration:
         
         for i in range(max_retries):
             # 发送请求
-            response = requests.get(f"{BASE_URL}/tasks/{task_id}")
+            response = client.get(f"/api/v1/tasks/{task_id}")
             
             # 验证响应
             assert response.status_code == 200, f"任务状态查询失败: {response.status_code}"
@@ -96,10 +97,10 @@ class TestApiIntegration:
         filename = os.path.basename(file_url)
         
         # 构建下载URL
-        download_url = f"http://localhost:8000/api/v1/outputs/{filename}"
+        download_path = f"/api/v1/outputs/{filename}"
         
         # 发送请求
-        response = requests.get(download_url)
+        response = client.get(download_path)
         
         # 验证响应
         assert response.status_code == 200, f"文件下载失败: {response.status_code}"

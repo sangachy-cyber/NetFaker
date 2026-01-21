@@ -46,14 +46,11 @@ class NetFakerConfig(BaseSettings):
     # 模型配置
     model_path: str = "data/models/default_model.pt"
     
-    class Config:
-        """Pydantic 配置类。
-        
-        设置从环境变量读取配置，支持.env文件。
-        """
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": False
+    }
 
 
 def get_config() -> NetFakerConfig:

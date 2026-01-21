@@ -19,13 +19,14 @@ class SimulationSegment(BaseModel):
     duration: int = Field(..., gt=0, description="持续时间（秒），必须是10的正整数倍")
     condition: Optional[str] = Field(None, description="预留字段，当前可选且无作用")
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "type": "s0",
                 "duration": 60
             }
         }
+    }
 
     def validate_duration(self):
         """验证duration是否为10的倍数。
@@ -57,8 +58,8 @@ class SimulationRequest(BaseModel):
     description: Optional[str] = Field(None, description="任务描述")
     segments: List[SimulationSegment] = Field(..., description="仿真阶段列表")
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "strategy": "rule",
                 "target_ip": "172.30.153.236",
@@ -68,6 +69,7 @@ class SimulationRequest(BaseModel):
                 ]
             }
         }
+    }
 
     def validate_strategy(self):
         """验证strategy是否为有效值。
@@ -93,12 +95,13 @@ class TaskResult(BaseModel):
     """
     config_file_url: str = Field(..., description="配置文件URL")
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "config_file_url": "/api/v1/outputs/sim_task_20251204_xyz789.txt"
             }
         }
+    }
 
 
 class TaskStatus(BaseModel):
@@ -117,8 +120,8 @@ class TaskStatus(BaseModel):
     updated_at: str = Field(..., description="更新时间")
     result: Optional[TaskResult] = Field(None, description="任务结果")
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "task_id": "task_20251204_xyz789",
                 "status": "completed",
@@ -129,6 +132,7 @@ class TaskStatus(BaseModel):
                 }
             }
         }
+    }
 
 
 class ErrorResponse(BaseModel):
@@ -141,13 +145,14 @@ class ErrorResponse(BaseModel):
     error: str = Field(..., description="错误信息")
     code: int = Field(..., description="错误码")
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "error": "Invalid request parameters",
                 "code": 400
             }
         }
+    }
 
 
 class SimulationResponse(BaseModel):
@@ -162,11 +167,12 @@ class SimulationResponse(BaseModel):
     status: str = Field(..., description="任务状态")
     message: str = Field(..., description="响应消息")
 
-    class Config:
-        json_schema_extra = {
+    model_config = {
+        "json_schema_extra": {
             "example": {
                 "task_id": "task_20251204_xyz789",
                 "status": "queued",
                 "message": "任务已提交"
             }
         }
+    }
