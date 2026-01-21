@@ -12,13 +12,13 @@ import pandas as pd
 
 class HoloWANWriter:
     """HoloWAN 数据写入器类。
-    
+
     负责将处理后的数据保存为 Parquet 文件，并序列化全局延迟 scaler。
     """
 
     def __init__(self, processed_data_dir: str = "data/processed/"):
         """初始化写入器。
-        
+
         Args:
             processed_data_dir: 处理后数据的保存目录
         """
@@ -28,12 +28,12 @@ class HoloWANWriter:
 
     def save_all_data(self, data_dict: Dict[str, pd.DataFrame]) -> None:
         """保存所有处理后的数据。
-        
+
         将所有处理后的数据保存为 Parquet 文件，文件名为原始文件名（不含扩展名）。
-        
+
         Args:
             data_dict: 文件名到处理后 DataFrame 的映射
-            
+
         Examples:
             >>> import pandas as pd
             >>> data = {
@@ -63,13 +63,13 @@ class HoloWANWriter:
 
     def save_data(self, df: pd.DataFrame, output_path: str) -> None:
         """保存单个处理后的数据。
-        
+
         将单个处理后的数据保存为 Parquet 文件，确保输出目录存在。
-        
+
         Args:
             df: 处理后的 DataFrame
             output_path: 输出文件路径
-            
+
         Examples:
             >>> import pandas as pd
             >>> data = {
@@ -91,13 +91,13 @@ class HoloWANWriter:
 
     def save_scaler(self, scaler_info: Dict, output_path: str = "data/processed/global_delay_scaler.joblib") -> None:
         """保存全局延迟 scaler。
-        
+
         将 scaler 信息序列化为 joblib 文件，以便后续使用。
-        
+
         Args:
             scaler_info: scaler 信息字典
             output_path: 输出文件路径
-            
+
         Examples:
             >>> scaler_info = {
             ...     'mode': 'shared',

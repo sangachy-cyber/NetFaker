@@ -4,13 +4,14 @@
 """
 
 import os
-from fastapi import APIRouter, HTTPException, Response
+
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
+from loguru import logger
 
 from netfaker.app.api.schemas import SimulationRequest, TaskStatus
 from netfaker.app.services.task_manager import TaskManager
 from netfaker.core.config import config
-from loguru import logger
 
 # 创建路由实例
 router = APIRouter()
@@ -31,11 +32,11 @@ async def simulate_network(request: SimulationRequest):
     """
     try:
         logger.info(f"收到仿真请求: {request}")
-        
+
         # 转换为字典格式
         request_dict = request.model_dump()
         segments = request_dict.pop("segments")
-        
+
         # 创建任务
         task_id = await task_manager.create_task(
             strategy=request_dict["strategy"],
@@ -43,7 +44,7 @@ async def simulate_network(request: SimulationRequest):
             segments=segments,
             description=request_dict["description"]
         )
-        
+
         return {
             "task_id": task_id,
             "status": "queued",
@@ -69,13 +70,13 @@ async def get_task_status(task_id: str):
     """
     try:
         logger.info(f"查询任务状态: {task_id}")
-        
+
         # 查询任务状态
         task = task_manager.get_task_status(task_id)
-        
+
         if not task:
             raise HTTPException(status_code=404, detail="任务不存在")
-        
+
         # 转换为TaskStatus模型
         return TaskStatus(
             task_id=task["task_id"],
@@ -103,13 +104,13 @@ async def download_file(filename: str):
     """
     try:
         logger.info(f"下载文件请求: {filename}.txt")
-        
+
         # 构建完整文件路径
         file_path = os.path.join(config.output_dir, f"{filename}.txt")
-        
+
         if not os.path.exists(file_path):
             raise HTTPException(status_code=404, detail="文件不存在")
-        
+
         # 返回文件响应
         return FileResponse(
             path=file_path,

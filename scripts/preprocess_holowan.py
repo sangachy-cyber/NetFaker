@@ -12,10 +12,10 @@
 使用示例：
     # 使用默认参数（共享延迟 scaler）
     python scripts/preprocess_holowan.py
-    
+
     # 使用独立延迟 scaler
     python scripts/preprocess_holowan.py --shared-delay-scaler=False
-    
+
     # 指定自定义数据目录
     python scripts/preprocess_holowan.py --raw-data-dir=data/raw/ --processed-data-dir=data/processed/
 """
@@ -30,7 +30,7 @@ from netfaker.simcore.preprocessing.holowan_preprocessor import HoloWANPreproces
 
 def main():
     """主函数。
-    
+
     解析命令行参数，执行预处理流程，保存结果。
     """
     # 解析命令行参数

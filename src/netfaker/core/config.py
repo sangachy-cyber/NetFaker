@@ -4,6 +4,7 @@
 """
 
 from pathlib import Path
+
 from pydantic_settings import BaseSettings
 
 
@@ -32,20 +33,20 @@ class NetFakerConfig(BaseSettings):
     log_to_file: bool = True
     log_dir: Path = Path("logs")
     data_dir: str = "data"
-    
+
     # HoloWAN API 配置
     holowan_api_url: str = "http://localhost:8080"
     holowan_api_key: str = ""
     holowan_engine_id: int = 1
-    
+
     # 数据库配置
     database_url: str = "sqlite:///./data/db/netfaker.db"
     db_dir: str = "data/db"
     output_dir: str = "output/holowan"
-    
+
     # 模型配置
     model_path: str = "data/models/default_model.pt"
-    
+
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",

@@ -7,6 +7,7 @@ import argparse
 import json
 
 from netfaker.core.logging import logger
+
 from netfaker.simcore.generator import (
     generate_simulation_params,
     list_available_strategies,

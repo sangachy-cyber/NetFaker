@@ -14,14 +14,14 @@ from netfaker.simcore.utils.holowan import HoloWANFile
 
 class HoloWANLoader:
     """HoloWAN 数据加载器类。
-    
+
     负责从 data/raw/ 目录加载 .txt 文件，解析并转换为 DataFrame，
     同时按照规范重命名列。
     """
 
     def __init__(self, raw_data_dir: str = "data/raw/"):
         """初始化加载器。
-        
+
         Args:
             raw_data_dir: 原始数据目录路径
         """
@@ -29,10 +29,10 @@ class HoloWANLoader:
 
     def load_all_files(self) -> Dict[str, pd.DataFrame]:
         """加载目录中所有 .txt 文件。
-        
+
         Returns:
             Dict[str, pd.DataFrame]: 文件名到 DataFrame 的映射
-            
+
         Examples:
             >>> loader = HoloWANLoader(raw_data_dir="data/raw/")
             >>> data_dict = loader.load_all_files()
@@ -69,13 +69,13 @@ class HoloWANLoader:
 
     def load_file(self, filepath: str) -> Optional[pd.DataFrame]:
         """加载单个 .txt 文件。
-        
+
         Args:
             filepath: 文件路径
-        
+
         Returns:
             Optional[pd.DataFrame]: 加载的数据，失败返回 None
-            
+
         Examples:
             >>> loader = HoloWANLoader()
             >>> df = loader.load_file("data/raw/campus.txt")
@@ -115,15 +115,15 @@ class HoloWANLoader:
 
     def _rename_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """重命名列，使用 _up/_down 后缀。
-        
+
         将原始列名从数字标识转换为方向标识，提高可读性。
-        
+
         Args:
             df: 原始 DataFrame
-        
+
         Returns:
             pd.DataFrame: 重命名后的 DataFrame
-            
+
         Examples:
             >>> import pandas as pd
             >>> df = pd.DataFrame({
@@ -152,15 +152,15 @@ class HoloWANLoader:
 
     def _add_raw_prefix(self, df: pd.DataFrame) -> pd.DataFrame:
         """添加 raw_ 前缀到所有列。
-        
+
         为原始值添加前缀，以便与后续处理后的归一化值区分。
-        
+
         Args:
             df: 重命名后的 DataFrame
-        
+
         Returns:
             pd.DataFrame: 添加前缀后的 DataFrame
-            
+
         Examples:
             >>> import pandas as pd
             >>> df = pd.DataFrame({

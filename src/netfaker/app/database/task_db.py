@@ -6,8 +6,7 @@
 import json
 import os
 import sqlite3
-from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 from loguru import logger
 
@@ -85,8 +84,8 @@ class TaskDatabase:
             logger.error(f"初始化数据库表失败: {e}")
             raise
 
-    def insert_task(self, task_id: str, status: str, strategy: str, 
-                    target_ip: str, segments: Dict[str, Any], 
+    def insert_task(self, task_id: str, status: str, strategy: str,
+                    target_ip: str, segments: Dict[str, Any],
                     description: Optional[str] = None) -> bool:
         """插入新任务。
 
@@ -105,11 +104,11 @@ class TaskDatabase:
             cursor = self.conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO tasks (task_id, status, description, strategy, 
+                INSERT INTO tasks (task_id, status, description, strategy,
                                target_ip, segments, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                 """,
-                (task_id, status, description, strategy, 
+                (task_id, status, description, strategy,
                  target_ip, json.dumps(segments))
             )
             self.conn.commit()
@@ -119,7 +118,7 @@ class TaskDatabase:
             logger.error(f"插入任务失败: {e}")
             return False
 
-    def update_task_status(self, task_id: str, status: str, 
+    def update_task_status(self, task_id: str, status: str,
                           result: Optional[Dict[str, Any]] = None) -> bool:
         """更新任务状态。
 

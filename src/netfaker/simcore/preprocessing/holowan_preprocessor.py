@@ -12,13 +12,13 @@ from sklearn.preprocessing import StandardScaler
 
 class HoloWANPreprocessor:
     """HoloWAN 数据预处理器类。
-    
+
     负责延迟归一化、丢包率缩放和带宽处理，生成标准化数据。
     """
 
     def __init__(self, shared_delay_scaler: bool = True):
         """初始化预处理器。
-        
+
         Args:
             shared_delay_scaler: 是否使用共享的延迟 scaler
         """
@@ -29,15 +29,15 @@ class HoloWANPreprocessor:
 
     def fit_transform(self, data_dict: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
         """拟合并转换所有数据。
-        
+
         首先拟合 scaler（根据选择的模式），然后对所有数据进行转换。
-        
+
         Args:
             data_dict: 文件名到 DataFrame 的映射
-        
+
         Returns:
             Dict[str, pd.DataFrame]: 处理后的数据
-            
+
         Examples:
             >>> import pandas as pd
             >>> data = {
@@ -71,9 +71,9 @@ class HoloWANPreprocessor:
 
     def _fit_shared_scaler(self, data_dict: Dict[str, pd.DataFrame]) -> None:
         """拟合共享的全局 scaler。
-        
+
         将所有 trace 的 delay_up 和 delay_down 合并为一个整体，拟合单一全局 scaler。
-        
+
         Args:
             data_dict: 文件名到 DataFrame 的映射
         """
@@ -98,9 +98,9 @@ class HoloWANPreprocessor:
 
     def _fit_separate_scalers(self, data_dict: Dict[str, pd.DataFrame]) -> None:
         """拟合独立的上行和下行 scaler。
-        
+
         分别聚合所有 trace 的 delay_up 和 delay_down，拟合两个独立 scaler。
-        
+
         Args:
             data_dict: 文件名到 DataFrame 的映射
         """
@@ -127,15 +127,15 @@ class HoloWANPreprocessor:
 
     def transform(self, df: pd.DataFrame) -> pd.DataFrame:
         """转换单个 DataFrame。
-        
+
         对数据应用预处理步骤：延迟归一化、丢包率缩放和带宽保持。
-        
+
         Args:
             df: 原始 DataFrame
-        
+
         Returns:
             pd.DataFrame: 处理后的 DataFrame
-            
+
         Examples:
             >>> import pandas as pd
             >>> data = {
@@ -173,12 +173,12 @@ class HoloWANPreprocessor:
 
     def _process_delay(self, df: pd.DataFrame) -> pd.DataFrame:
         """处理延迟数据。
-        
+
         对延迟数据应用 log(1 + x) 变换和 StandardScaler 标准化。
-        
+
         Args:
             df: 输入 DataFrame
-        
+
         Returns:
             pd.DataFrame: 处理后的 DataFrame
         """
@@ -208,12 +208,12 @@ class HoloWANPreprocessor:
 
     def _process_loss(self, df: pd.DataFrame) -> pd.DataFrame:
         """处理丢包率数据。
-        
+
         对丢包率进行线性缩放，转换为 [0, 1] 范围。
-        
+
         Args:
             df: 输入 DataFrame
-        
+
         Returns:
             pd.DataFrame: 处理后的 DataFrame
         """
@@ -233,12 +233,12 @@ class HoloWANPreprocessor:
 
     def _process_bandwidth(self, df: pd.DataFrame) -> pd.DataFrame:
         """处理带宽数据（保持不变）。
-        
+
         带宽数据保持原始值不变，不做任何变换。
-        
+
         Args:
             df: 输入 DataFrame
-        
+
         Returns:
             pd.DataFrame: 处理后的 DataFrame
         """
@@ -250,10 +250,10 @@ class HoloWANPreprocessor:
 
     def get_scaler_info(self) -> Dict:
         """获取 scaler 信息。
-        
+
         Returns:
             Dict: scaler 信息，包含模式和 scaler 实例
-            
+
         Examples:
             >>> preprocessor = HoloWANPreprocessor(shared_delay_scaler=True)
             >>> # 先拟合

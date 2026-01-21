@@ -8,11 +8,12 @@ import os
 import random
 import string
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
+from loguru import logger
 
 from netfaker.app.database.task_db import TaskDatabase
 from netfaker.core.config import config
-from loguru import logger
 from netfaker.simcore.generator import generate_simulation_params
 from netfaker.simcore.utils.holowan import HoloWANFile
 
@@ -45,7 +46,7 @@ class TaskManager:
         random_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
         return f"task_{timestamp}_{random_str}"
 
-    async def create_task(self, strategy: str, target_ip: str, 
+    async def create_task(self, strategy: str, target_ip: str,
                          segments: Dict[str, Any], description: Optional[str] = None) -> str:
         """创建新任务。
 
@@ -59,7 +60,7 @@ class TaskManager:
             str: 生成的任务ID
         """
         task_id = self.generate_task_id()
-        
+
         # 插入任务到数据库
         self.db.insert_task(
             task_id=task_id,
@@ -69,13 +70,13 @@ class TaskManager:
             segments=segments,
             description=description
         )
-        
+
         # 异步处理任务
         asyncio.create_task(self.process_task(task_id, strategy, target_ip, segments, description))
-        
+
         return task_id
 
-    async def process_task(self, task_id: str, strategy: str, target_ip: str, 
+    async def process_task(self, task_id: str, strategy: str, target_ip: str,
                          segments: Dict[str, Any], description: Optional[str] = None):
         """处理仿真任务。
 
@@ -89,16 +90,16 @@ class TaskManager:
         try:
             # 更新任务状态为processing
             self.db.update_task_status(task_id, "processing")
-            
+
             # 策略名称映射，将API文档中的策略名映射到实际注册的策略名
             strategy_map = {
                 "rule": "rule_based",
                 "model": "model_based"  # 暂时使用占位符，后续会实现
             }
-            
+
             # 获取实际策略名称
             actual_strategy = strategy_map.get(strategy, strategy)
-            
+
             # 准备策略参数，根据策略类型转换segments格式
             strategy_params = {}
             if actual_strategy == "rule_based":
@@ -115,29 +116,29 @@ class TaskManager:
             else:
                 # 其他策略直接使用segments
                 strategy_params["segments"] = segments
-            
+
             # 生成仿真参数
             logger.info(f"开始生成仿真参数: {task_id}")
             simulation_params = generate_simulation_params(actual_strategy, strategy_params)
-            
+
             # 生成HoloWAN文件
             holowan_file_path = await self._generate_holowan_file(
                 task_id, target_ip, simulation_params, description
             )
-            
+
             # 更新任务结果
             result = {
                 "config_file_url": holowan_file_path
             }
             self.db.update_task_status(task_id, "completed", result)
-            
+
             logger.info(f"任务处理完成: {task_id}")
         except Exception as e:
             logger.error(f"任务处理失败: {task_id}, 错误: {e}")
             self.db.update_task_status(task_id, "failed")
 
-    async def _generate_holowan_file(self, task_id: str, target_ip: str, 
-                                     simulation_params: Dict[str, Any], 
+    async def _generate_holowan_file(self, task_id: str, target_ip: str,
+                                     simulation_params: Dict[str, Any],
                                      description: Optional[str] = None) -> str:
         """生成HoloWAN文件。
 
@@ -152,11 +153,11 @@ class TaskManager:
         """
         # 创建HoloWANFile实例
         holowan_file = HoloWANFile()
-        
+
         # 设置文件属性
         holowan_file.test_name = description or f"generated_{task_id}"
         holowan_file.destination = f"{target_ip}:8081"
-        
+
         # 添加数据点
         # 这里需要根据simulation_params生成具体的HoloWAN数据点
         # 目前简化实现，生成示例数据
@@ -169,14 +170,14 @@ class TaskManager:
                 dl_loss=0.05 + i * 0.005,
                 dl_bw=12.0 - i * 0.3
             )
-        
+
         # 生成文件名
         filename = f"sim_{task_id}.txt"
         file_path = os.path.join(self.output_dir, filename)
-        
+
         # 写入文件
         holowan_file.write_to_file(file_path)
-        
+
         # 返回相对路径
         return os.path.relpath(file_path)
 

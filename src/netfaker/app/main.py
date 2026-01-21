@@ -3,15 +3,15 @@
 负责创建和配置FastAPI应用实例。
 """
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
 from loguru import logger
 
 from netfaker.app.api import endpoints
 from netfaker.core.config import config
 from netfaker.core.logger import setup_logger
-
 
 # 初始化日志系统（必须在 app 创建前调用）
 setup_logger()
@@ -20,7 +20,7 @@ setup_logger()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理器。
-    
+
     处理应用的启动和关闭事件。
     """
     # 启动时执行
