@@ -1,0 +1,3 @@
+[tool.uv.python]
+index-url = "https://mirrors.aliyun.com/pypi/simple/"
+extra-index-url = []
