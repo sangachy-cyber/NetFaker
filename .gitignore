@@ -11,7 +11,7 @@ __pycache__/
 
 # Output directories
 output/
-data/
+data/db/
 
 # C extensions
 *.so
