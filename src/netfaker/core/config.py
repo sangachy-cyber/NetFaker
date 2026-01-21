@@ -34,7 +34,9 @@ class NetFakerConfig(BaseSettings):
     holowan_engine_id: int = 1
     
     # 数据库配置
-    database_url: str = "sqlite:///./netfaker.db"
+    database_url: str = "sqlite:///./data/db/netfaker.db"
+    db_dir: str = "data/db"
+    output_dir: str = "output/holowan"
     
     # 模型配置
     model_path: str = "data/models/default_model.pt"

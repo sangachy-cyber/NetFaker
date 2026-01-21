@@ -9,6 +9,10 @@ __pycache__/
 # Trae AI files
 .trae/
 
+# Output directories
+output/
+data/
+
 # C extensions
 *.so
 

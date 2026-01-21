@@ -11,6 +11,41 @@ from netfaker.core.logging import logger
 # 导入所有策略（自动注册）
 from netfaker.simcore.strategy import strategy_registry
 from netfaker.simcore.strategies import rule_based
+# 导入其他策略（如果有）
+# from netfaker.simcore.strategies import ml_strategy
+
+
+# 临时添加model_based策略占位符，避免策略不存在错误
+from netfaker.simcore.strategy import SimulationStrategy
+
+class ModelBasedStrategy(SimulationStrategy):
+    """基于模型的仿真策略占位符。
+    
+    实际实现将在后续添加。
+    """
+    
+    @property
+    def name(self) -> str:
+        return "model_based"
+    
+    @property
+    def description(self) -> str:
+        return "基于机器学习模型的仿真参数生成策略"
+    
+    def generate(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        # 简单实现，返回固定参数
+        return {
+            "strategy": self.name,
+            "parameters": {
+                "delay_ms": 100.0,
+                "loss_percent": 0.1,
+                "jitter_ms": 5.0,
+                "bandwidth_mbps": 10.0
+            }
+        }
+
+# 注册model_based策略
+strategy_registry.register(ModelBasedStrategy())
 
 
 def generate_simulation_params(strategy_name: str, params: Dict[str, Any]) -> Dict[str, Any]:
