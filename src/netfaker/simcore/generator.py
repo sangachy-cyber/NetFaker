@@ -10,8 +10,8 @@ from loguru import logger
 from netfaker.core.exceptions import StrategyError
 
 # 导入所有策略（自动注册）
-# 导入其他策略（如果有）
-# from netfaker.simcore.strategies import ml_strategy
+from netfaker.simcore.strategies import ml_strategy
+from netfaker.simcore.strategies import rule_based
 # 临时添加model_based策略占位符，避免策略不存在错误
 from netfaker.simcore.strategy import SimulationStrategy, strategy_registry
 
