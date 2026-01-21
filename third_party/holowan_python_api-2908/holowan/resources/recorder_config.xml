@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<recorder_config>
+  <config>
+    <server_id>1</server_id>
+    <engine_id>1</engine_id>
+    <path_id>1</path_id>
+    <loss_base>10</loss_base>
+  </config>
+</recorder_config>
