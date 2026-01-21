@@ -324,27 +324,27 @@ class Impairments(XMLHolder):
         rd_node.text = str(self._redirect)
         self.add_child(rd_node)
 
-        if self.bandwidth != None:
+        if self.bandwidth is not None:
             self.add_child(self._bandwidth.node)
-        if self._bakg_utilization != None:
+        if self._bakg_utilization is not None:
             self.add_child(self._bakg_utilization.node)
-        if self._queue_limit != None:
+        if self._queue_limit is not None:
             self.add_child(self._queue_limit.node)
-        if self._modify != None:
+        if self._modify is not None:
             self.add_child(self._modify.node)
-        if self._mtu != None:
+        if self._mtu is not None:
             self.add_child(self._mtu.node)
-        if self._frame_overhead != None:
+        if self._frame_overhead is not None:
             self.add_child(self._frame_overhead.node)
-        if self._delay != None:
+        if self._delay is not None:
             self.add_child(self._delay.node)
-        if self._loss != None:
+        if self._loss is not None:
             self.add_child(self._loss.node)
-        if self._corruption != None:
+        if self._corruption is not None:
             self.add_child(self._corruption.node)
-        if self._reorder != None:
+        if self._reorder is not None:
             self.add_child(self._reorder.node)
-        if self._dup != None:
+        if self._dup is not None:
             self.add_child(self._dup.node)
 
     def clone_from(self, src: 'Impairments') -> 'Impairments':
@@ -604,7 +604,7 @@ class Path(XMLHolder):
     _r2l: Impairments
 
     def __init__(self, path_cfg_xml: HoloWANConfigXML = None):
-        if path_cfg_xml == None:
+        if path_cfg_xml is None:
             path_cfg_xml = _PATH_CONFIG_FORMAT
 
         root = xt.xmlString_to_Object(path_cfg_xml)
@@ -661,10 +661,7 @@ class Path(XMLHolder):
         self.add_child(self._r2l.node)
 
     def _construct_direction(self, direction: str) -> None:
-        if direction == _DIRECTION_L2R:
-            direction_node = self._l2r
-        else:
-            direction_node = self._r2l
+        direction_node = self._l2r if direction == _DIRECTION_L2R else self._r2l
         for imp in list(self.find(direction)):
             imp_name = imp.tag
             # get "enable" first

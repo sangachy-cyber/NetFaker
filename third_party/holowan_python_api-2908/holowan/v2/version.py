@@ -12,7 +12,7 @@ _DEPRECATION_REASON: str = r""
 def deprecated(func: Callable):
     def wrapper(*args, **kwargs):
         warnings.warn("The old version of holowan python API will be deprecated soon. Use the new version instead.",
-                      category=DeprecationWarning
+                      stacklevel=2, category=DeprecationWarning
                       )
         return func(*args, **kwargs)
 

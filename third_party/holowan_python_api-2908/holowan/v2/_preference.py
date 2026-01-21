@@ -47,7 +47,7 @@ class Preference(XMLHolder):
 
     Args:
         preference_xml (HoloWANConfigXML, optional): 首选项配置信息 xml 字符串。默认为 None。
-    
+
     Examples:
         >>> preference = HoloWANAdmin.get_preferences(holowan_ip, holowan_port)
         >>> preference.language = 1
@@ -69,7 +69,7 @@ class Preference(XMLHolder):
             HTTP_PORT: int,
             GUI: int
         }
-        if preference_xml != None:
+        if preference_xml is not None:
             # TODO: 异常处理
             root = xt.xmlString_to_Object(preference_xml)
             self._preference_parameters[CLEAN_BUFFER] = root.findtext(CLEAN_BUFFER)
@@ -93,7 +93,7 @@ class Preference(XMLHolder):
             可读可写
 
         """
-        return True if self._preference_parameters[CLEAN_BUFFER] == "true" else False
+        return self._preference_parameters[CLEAN_BUFFER] == "true"
 
     @clean_buffer_when_apply_path_config.setter
     @check_parameter
@@ -144,7 +144,7 @@ class Preference(XMLHolder):
             可读可写
 
         """
-        return True if self._preference_parameters[ENABLE_JUMBO_FRAME] == 1 else False
+        return self._preference_parameters[ENABLE_JUMBO_FRAME] == 1
 
     @enable_jumbo_frame.setter
     @check_parameter
@@ -195,7 +195,7 @@ class Preference(XMLHolder):
             可读可写
 
         """
-        return True if self._preference_parameters[PRINTOUT] == 1 else False
+        return self._preference_parameters[PRINTOUT] == 1
 
     @printout.setter
     @check_parameter

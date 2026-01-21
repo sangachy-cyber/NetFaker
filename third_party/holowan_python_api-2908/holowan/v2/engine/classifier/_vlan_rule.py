@@ -143,15 +143,9 @@ class VLANRule(Rule):
         Returns:
             VLANRule 对象。
         """
-        if node.find(_FPCP).get(_ANY) == "1":
-            fpcp = _ANY
-        else:
-            fpcp = node.findtext(_FPCP)
+        fpcp = _ANY if node.find(_FPCP).get(_ANY) == "1" else node.findtext(_FPCP)
 
-        if node.find(_FPID).get(_ANY) == "1":
-            fpid = _ANY
-        else:
-            fpid = node.findtext(_FPID)
+        fpid = _ANY if node.find(_FPID).get(_ANY) == "1" else node.findtext(_FPID)
 
         enable_stag = node.findtext(_ENABLE_STAG)
         action = int(node.findtext(_ACTION))
@@ -159,15 +153,9 @@ class VLANRule(Rule):
             fpcp=fpcp, fpid=fpid, action=action
         )
         if enable_stag == 1:
-            if node.find(_SPCP).get(_ANY) == "1":
-                spcp = _ANY
-            else:
-                spcp = node.findtext(_SPCP)
+            spcp = _ANY if node.find(_SPCP).get(_ANY) == "1" else node.findtext(_SPCP)
 
-            if node.find(_SPID).get(_ANY) == "1":
-                spid = _ANY
-            else:
-                spid = node.findtext(_SPID)
+            spid = _ANY if node.find(_SPID).get(_ANY) == "1" else node.findtext(_SPID)
             vlan.enable_second_tag(spcp, spid)
 
         # 由于 WEB GUI 2.0 支持设置分类规则的 label(是 xml 节点的一个属性)

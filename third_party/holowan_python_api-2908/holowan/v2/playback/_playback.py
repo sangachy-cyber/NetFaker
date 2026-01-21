@@ -56,7 +56,7 @@ class PlayBack(object):
         return requests.get(url).text
 
     def get_playback_file_data(self, engine_id: EngineID, path_id: PathID, file_name: str, is_brief: bool):
-        brief = "true" if (is_brief == True) else "false"
+        brief = "true" if (is_brief) else "false"
         url = _playback_get_data_url(
             self._holowan_ip, self._holowan_port, engine_id,
             path_id, file_name, brief

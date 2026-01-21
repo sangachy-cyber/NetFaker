@@ -12,12 +12,12 @@ class checkParameter(object):
     def __call__(self, function):
         @wraps(function)
         def wrapper(*args, **kwargs):
-            newArgs = list()
-            newKwargs = dict()
+            newArgs = []
+            newKwargs = {}
             sig = inspect.signature(function)  # 提取函数签名
             params = sig.parameters
             va = list(params.values())
-            for arg, param in zip(args, va):
+            for arg, param in zip(args, va, strict=False):
                 if type(arg) == int and param.annotation ==float:
                     arg = float(arg)
                 if param.annotation != inspect._empty and not isinstance(arg, param.annotation):
@@ -69,7 +69,7 @@ class GetHoloWANParameter:
         holowanInformation: str = self.get_HoloWAN_information(holowanIp, holowanPort)
         holowanObject = xt.xmlString_to_Object(holowanInformation)
         eNodeList = xt.get_nodes(holowanObject, "e")
-        for eNode in eNodeList:
+        for _eNode in eNodeList:
             pass
 
 

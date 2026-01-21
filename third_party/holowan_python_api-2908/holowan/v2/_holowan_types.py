@@ -162,16 +162,16 @@ def check_parameter(function: Callable):
 
     @functools.wraps(function)
     def wrapper(*args, **kwargs):
-        new_args = list()
-        new_kwargs = dict()
+        new_args = []
+        new_kwargs = {}
         sig = inspect.signature(function)  # 提取函数签名
         params = sig.parameters
         va = list(params.values())
-        for arg, param in zip(args, va):
+        for arg, param in zip(args, va, strict=False):
             if type(arg) == int and param.annotation == float:
                 arg = float(arg)
             if param.annotation == IPAddress:
-                if mt.isIP(str(arg)) == False:
+                if not mt.isIP(str(arg)):
                     error = msg.format(argument=param.name, expected=param.annotation.__name__,
                                        got=type(arg), value=arg)
                     raise TypeError(error)
@@ -179,7 +179,7 @@ def check_parameter(function: Callable):
                     new_args.append(arg)
                     continue
             if param.annotation == PortNumber:
-                if mt.isPort(str(arg)) == False:
+                if not mt.isPort(str(arg)):
                     error = msg.format(argument=param.name, expected=param.annotation.__name__,
                                        got=type(arg), value=arg)
                     raise TypeError(error)
@@ -197,12 +197,12 @@ def check_parameter(function: Callable):
             if isinstance(v, int) and params[k].annotation == float:
                 v = float(v)
             if params[k].annotation == IPAddress:
-                if mt.isIP(str(v)) == False:
+                if not mt.isIP(str(v)):
                     error = msg.format(argument=params[k].name, expected=params[k].annotation.__name__,
                                        got=type(v), value=v)
                     raise TypeError(error)
             elif params[k].annotation == PortNumber:
-                if mt.isPort(str(v)) == False:
+                if not mt.isPort(str(v)):
                     error = msg.format(argument=params[k].name, expected=params[k].annotation.__name__,
                                        got=type(v), value=v)
                     raise TypeError(error)

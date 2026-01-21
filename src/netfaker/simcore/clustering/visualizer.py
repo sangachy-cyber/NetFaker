@@ -47,14 +47,14 @@ class Visualizer:
     ```python
     # 初始化可视化器
     visualizer = Visualizer("data/clusters/state_metadata.json")
-    
+
     # 生成可视化
     viz_paths = visualizer.generate_visualization(
         features, state_info,
         output_dir="output/reports/cluster",
         title="Network State Clustering"
     )
-    
+
     # 查看生成的文件
     print("UMAP可视化路径:", viz_paths.get("umap"))
     print("t-SNE可视化路径:", viz_paths.get("tsne"))
@@ -63,7 +63,7 @@ class Visualizer:
 
     def __init__(self, state_metadata_path: str = "data/clusters/state_metadata.json"):
         """初始化可视化器。
-        
+
         Args:
             state_metadata_path: 状态元数据文件路径，包含状态颜色信息
 
@@ -78,9 +78,9 @@ class Visualizer:
 
     def _load_state_metadata(self) -> Dict[str, Any]:
         """加载状态元数据文件。
-        
+
         从指定路径加载状态元数据JSON文件，包含状态ID、名称和颜色信息。
-        
+
         Returns:
             Dict[str, Any]: 状态元数据字典，包含状态列表和其他信息
 
@@ -98,9 +98,9 @@ class Visualizer:
 
     def _create_color_map(self) -> Dict[int, str]:
         """创建状态颜色映射字典。
-        
+
         从状态元数据中提取每个状态的颜色信息，创建状态ID到颜色代码的映射。
-        
+
         Returns:
             Dict[int, str]: 颜色映射字典，键为state_id，值为颜色代码
 
@@ -121,13 +121,13 @@ class Visualizer:
                                output_dir: str = "output/reports/cluster",
                                title: str = "HoloWAN Network State Clustering") -> Dict[str, str]:
         """生成UMAP和t-SNE可视化。
-        
+
         该方法执行以下步骤：
         1. 确保输出目录存在
         2. 如果UMAP可用，执行UMAP降维并生成可视化
         3. 执行t-SNE降维并生成可视化
         4. 返回生成的文件路径
-        
+
         Args:
             X: 特征矩阵，形状为 (n_samples, n_features)
             state_info: 状态信息字典，包含以下字段：
@@ -137,7 +137,7 @@ class Visualizer:
                 - state_name: 状态名称数组
             output_dir: 输出目录路径
             title: 可视化标题
-            
+
         Returns:
             Dict[str, str]: 输出文件路径字典，包含：
                 - umap: UMAP可视化文件路径（如果生成）
@@ -151,7 +151,7 @@ class Visualizer:
             output_dir="output/reports/cluster",
             title="Network State Clustering"
         )
-        
+
         # 查看生成的文件路径
         print("UMAP可视化:", viz_paths.get("umap"))
         print("t-SNE可视化:", viz_paths.get("tsne"))
@@ -181,12 +181,12 @@ class Visualizer:
 
     def _run_umap(self, X: np.ndarray) -> np.ndarray:
         """执行UMAP降维。
-        
+
         使用UMAP算法将高维特征矩阵降维到2维空间，用于可视化。
-        
+
         Args:
             X: 特征矩阵，形状为 (n_samples, n_features)
-            
+
         Returns:
             np.ndarray: 降维后的嵌入，形状为 (n_samples, 2)
 
@@ -213,12 +213,12 @@ class Visualizer:
 
     def _run_tsne(self, X: np.ndarray) -> np.ndarray:
         """执行t-SNE降维。
-        
+
         使用t-SNE算法将高维特征矩阵降维到2维空间，用于可视化。
-        
+
         Args:
             X: 特征矩阵，形状为 (n_samples, n_features)
-            
+
         Returns:
             np.ndarray: 降维后的嵌入，形状为 (n_samples, 2)
 
@@ -240,20 +240,20 @@ class Visualizer:
     def _create_static_plot(self, embedding: np.ndarray, state_info: Dict[str, np.ndarray],
                            output_dir: str, title: str, method: str) -> str:
         """创建静态可视化图。
-        
+
         生成降维结果的静态可视化图，包括：
         1. 不同状态使用不同颜色
         2. 混合状态添加边框标记
         3. 样本数量较少的状态增大点的大小
         4. 使用固定文件名保存
-        
+
         Args:
             embedding: 降维嵌入，形状为 (n_samples, 2)
             state_info: 状态信息字典
             output_dir: 输出目录
             title: 可视化标题
             method: 降维方法名称（"umap" 或 "tsne"）
-            
+
         Returns:
             str: 输出文件路径
 
@@ -261,9 +261,9 @@ class Visualizer:
         ```python
         # 创建静态可视化图
         plot_path = visualizer._create_static_plot(
-            embedding, state_info, 
-            "output/reports/cluster", 
-            "Network State Clustering", 
+            embedding, state_info,
+            "output/reports/cluster",
+            "Network State Clustering",
             "umap"
         )
         print("可视化文件已保存到:", plot_path)
@@ -274,7 +274,7 @@ class Visualizer:
         # 获取状态信息
         state_ids = state_info["state_id"]
         is_pure = state_info["is_pure"]
-        state_probas = state_info["state_proba"]
+        state_info["state_proba"]
 
         # 为每个状态创建散点，确保所有状态都能显示
         unique_state_ids = np.unique(state_ids)
@@ -335,12 +335,12 @@ class Visualizer:
 
     def _get_state_name(self, state_id: int) -> str:
         """根据状态ID获取状态名称。
-        
+
         从状态元数据中查找对应状态ID的名称，如果未找到则返回默认名称。
-        
+
         Args:
             state_id: 状态ID
-            
+
         Returns:
             str: 状态名称
 
@@ -360,15 +360,15 @@ class Visualizer:
     def _create_interactive_plot(self, embedding: np.ndarray, state_info: Dict[str, np.ndarray],
                                 output_dir: str, title: str) -> str:
         """创建交互式可视化图（可选）。
-        
+
         使用Plotly创建交互式UMAP可视化，支持悬停查看详情。
-        
+
         Args:
             embedding: UMAP嵌入，形状为 (n_samples, 2)
             state_info: 状态信息字典
             output_dir: 输出目录
             title: 可视化标题
-            
+
         Returns:
             str: 输出文件路径，如果Plotly未安装则返回空字符串
 
@@ -449,17 +449,17 @@ class Visualizer:
                           test_features: np.ndarray, test_state_info: Dict[str, np.ndarray],
                           output_dir: str = "output/reports/cluster") -> Dict[str, str]:
         """可视化训练集和测试集的组合结果。
-        
+
         将训练集和测试集的特征和状态信息组合后生成可视化，
         便于比较两个数据集的聚类结果。
-        
+
         Args:
             train_features: 训练集特征矩阵
             train_state_info: 训练集状态信息字典
             test_features: 测试集特征矩阵
             test_state_info: 测试集状态信息字典
             output_dir: 输出目录
-            
+
         Returns:
             Dict[str, str]: 输出文件路径字典，包含UMAP和t-SNE可视化
 

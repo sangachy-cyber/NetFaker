@@ -163,7 +163,7 @@ class EthernetStatus(object):
 
         Attributes:
             port_status: Readonly property. 设备所有网口的状态信息。每个 PortStatus 包含对应网口的状态信息。
-    
+
         Examples::
             >>> status = HoloWANAdmin.get_ethernet_status(holowan_ip=holowan_ip,
                                               holowan_port=holowan_port)
@@ -174,7 +174,7 @@ class EthernetStatus(object):
 
     @check_parameter
     def __init__(self, status_xml: HoloWANConfigXML = None):
-        if status_xml != None:
+        if status_xml is not None:
             # TODO: 异常处理
             self._status_xml = status_xml
             root = xt.xmlString_to_Object(status_xml)
@@ -228,7 +228,7 @@ class NetworkConfig(XMLHolder):
             ipv6_global_address(str): The ipv6 address.
             ipv6_link_address(str): The ipv6 link address.
             ipv6_dhcp_switch(str): The ipv6 DHCP switch.
-        
+
         EXamples:
             >>> network_config = HoloWANAdmin.get_network_configuration(holowan_ip,holowan_port)
             >>> network_config.ipv4_address = "192.168.1.199"
@@ -253,7 +253,7 @@ class NetworkConfig(XMLHolder):
             NTP_SERVER2: str,
             MACADDRESS: str
         }
-        if network_cfg_xml != None:
+        if network_cfg_xml is not None:
             # TODO: 异常处理
             root = xt.xmlString_to_Object(network_cfg_xml)
             self._network_cfg_parameters[HOSTNAME] = root.findtext(NETWORK_SETTINGS_HEADER + HOSTNAME)

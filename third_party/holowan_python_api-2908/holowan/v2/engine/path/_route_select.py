@@ -131,7 +131,6 @@ class RouteSelect(object):
         delay = [None] * 2
         loss = [None] * 2
         shake = [None] * 2
-        resp = []
         postJson = '{{"client":"{0}","server":"{1}","NetType":"{2}","operator":"{3}"}}'.format(
             self._client, self._server,
             self._network_type, self._isp
@@ -162,10 +161,7 @@ class RouteSelect(object):
             if key == "downlink":
                 bw_down = round(float(value), 2)
 
-        if self._network_type == "2G":
-            rate_unit = 2
-        else:
-            rate_unit = 3
+        rate_unit = 2 if self._network_type == "2G" else 3
 
         for d in range(1, 3):
             delay_normal = DelayNormal(

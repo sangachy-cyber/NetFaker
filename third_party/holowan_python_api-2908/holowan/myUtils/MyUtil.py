@@ -92,10 +92,7 @@ def create_and_write_file(file_dir, text):
 
 # 判断字符串是否为ip地址
 def isIP(ipStr: str) -> bool:
-    if isIPV4(ipStr) or isIPV6(ipStr):
-        return True
-    else:
-        return False
+    return bool(isIPV4(ipStr) or isIPV6(ipStr))
 
 
 # 判断字符串是否为IPV4地址
@@ -122,20 +119,14 @@ def isIPV6(ipStr: str) -> bool:
 
 # 判断字符串是否为端口号
 def isPort(portStr: str) -> bool:
-    if portStr.isdigit() != True:
+    if not portStr.isdigit():
         return False
-    if int(portStr) >= 1 and int(portStr) <= 65535:
-        return True
-    else:
-        return False
+    return bool(int(portStr) >= 1 and int(portStr) <= 65535)
 
 
 # 判断字符串为MAC地址
 def isMac(macStr: str) -> bool:
-    if re.compile("^([A-Fa-f0-9]{2}[-,:]){5}[A-Fa-f0-9]{2}$").match(macStr):
-        return True
-    else:
-        return False
+    return bool(re.compile("^([A-Fa-f0-9]{2}[-,:]){5}[A-Fa-f0-9]{2}$").match(macStr))
 
 
 # 判断字符串是否为两位十六进制数
@@ -143,10 +134,7 @@ def isDoubleHexadecimal(theStr):
     if len(theStr) == 2:
         pattern = "[0-9a-fA-F]{2}"
         p = re.compile(pattern)
-        if p.match(theStr):
-            return True
-        else:
-            return False
+        return bool(p.match(theStr))
     else:
         return False
 
@@ -156,10 +144,7 @@ def isHexadecimal(theStr, size):
     if len(theStr) == size * 2:
         pattern = "[0-9a-fA-F]{2}"
         p = re.compile(pattern)
-        if p.match(theStr):
-            return True
-        else:
-            return False
+        return bool(p.match(theStr))
     else:
         return False
 
@@ -175,10 +160,7 @@ def getProperties(nodeTag):
 # 判断四位整数
 def isFourInteger(num: int) -> bool:
     if isinstance(num, int):
-        if len(str(num)) == 4:
-            return True
-        else:
-            return False
+        return len(str(num)) == 4
     else:
         return False
 
@@ -260,10 +242,7 @@ def ObjectPathAndConditionDict(doubleList: list) -> dict:
 def indexofMaxSameValue(l1: list, l2: list) -> int:
     minLen = -1
     maxSameValueIndex = -1
-    if len(l1) < len(l2):
-        minLen = l1
-    else:
-        minLen = l2
+    minLen = l1 if len(l1) < len(l2) else l2
     for i in range(len(minLen)):
         l1Value = l1[i]
         l2Value = l2[i]

@@ -30,12 +30,12 @@ def _check_mac_rule_parameters(function: Callable):
 
     @functools.wraps(function)
     def wrapper(*args, **kwargs):
-        new_args = list()
+        new_args = []
         new_kwargs = {}
         sig = inspect.signature(function)  # 提取函数签名
         params = sig.parameters
         va = list(params.values())
-        for arg, param in zip(args, va):
+        for arg, param in zip(args, va, strict=False):
             if type(arg) == int and param.annotation == float:
                 arg = float(arg)
             if param.annotation != inspect._empty and not isinstance(arg, param.annotation):
@@ -44,9 +44,9 @@ def _check_mac_rule_parameters(function: Callable):
                 raise TypeError(error)
             new_args.append(arg)
         for k, v in kwargs.items():
-            if k == _SRC or k == _DST:
+            if k in (_SRC, _DST):
                 if isinstance(v, str):
-                    if v != _ANY and mt.isMac(v) == False:
+                    if v != _ANY and not mt.isMac(v):
                         raise ValueError(r"Argument {argument!r} is not a valid MACAddress, got {got!r}".format(
                             argument=k, got=v
                         ))
@@ -54,7 +54,7 @@ def _check_mac_rule_parameters(function: Callable):
                         # int, valid
                         new_kwargs[k] = v
                 elif isinstance(v, list):
-                    for idx, pt in enumerate(set(v)):
+                    for _idx, pt in enumerate(set(v)):
                         if isinstance(pt, str) and mt.isMac(pt):
                             new_kwargs[k] = v
                         else:
@@ -186,18 +186,9 @@ class MACRule(Rule):
         Returns:
             MACRule 对象。
         """
-        if node.find(_SRC).get(_ANY) == "1":
-            src = _ANY
-        else:
-            src = node.findtext(_SRC)
-        if node.find(_DST).get(_ANY) == "1":
-            dst = _ANY
-        else:
-            dst = node.findtext(_DST)
-        if node.find(_TYPE).get(_ANY) == "1":
-            type = _ANY
-        else:
-            type = node.findtext(_TYPE)
+        src = _ANY if node.find(_SRC).get(_ANY) == "1" else node.findtext(_SRC)
+        dst = _ANY if node.find(_DST).get(_ANY) == "1" else node.findtext(_DST)
+        type = _ANY if node.find(_TYPE).get(_ANY) == "1" else node.findtext(_TYPE)
         rule = MACRule(
             src=src,
             dst=dst,

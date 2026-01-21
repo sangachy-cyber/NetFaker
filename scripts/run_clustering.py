@@ -7,6 +7,7 @@
 """
 
 import argparse
+
 from netfaker.simcore.clustering import ClusterRunner
 
 
@@ -61,10 +62,10 @@ def main():
         default=True,
         help="为测试集分配状态（默认：True）"
     )
-    
+
     args = parser.parse_args()
-    
-    print(f"=== HoloWAN 聚类与状态生成模块 ===")
+
+    print("=== HoloWAN 聚类与状态生成模块 ===")
     print(f"算法: {args.algorithm}")
     print(f"聚类数量: {args.n_components}")
     print(f"置信度阈值: {args.confidence_threshold}")
@@ -73,7 +74,7 @@ def main():
     print(f"可视化: {args.visualize}")
     print(f"为测试集分配状态: {args.assign_test_states}")
     print()
-    
+
     # 初始化并运行聚类执行器
     runner = ClusterRunner(
         algorithm=args.algorithm,
@@ -81,7 +82,7 @@ def main():
         confidence_threshold=args.confidence_threshold,
         visualize=args.visualize
     )
-    
+
     try:
         stats = runner.run(args.train_path, args.test_path)
         print("=== 聚类完成 ===")
@@ -89,27 +90,27 @@ def main():
         print(f"训练集平均置信度: {stats['train']['mean_proba']:.4f}")
         print(f"测试集状态分布: {stats['test']['state_distribution']}")
         print(f"测试集平均置信度: {stats['test']['mean_proba']:.4f}")
-        
+
         if "gmm" in stats:
             print(f"GMM BIC: {stats['gmm']['bic']:.2f}")
             print(f"GMM AIC: {stats['gmm']['aic']:.2f}")
-        
+
         print()
-        print(f"输出文件:")
-        print(f"  - 训练集带状态: data/clusters/train_with_state.parquet")
-        print(f"  - 测试集带状态: data/clusters/test_with_state.parquet")
-        print(f"  - 模型文件: data/clusters/gmm_model.joblib")
-        print(f"  - 特征缩放器: data/clusters/feature_scaler.joblib")
-        print(f"  - 状态元数据: data/clusters/state_metadata.json")
+        print("输出文件:")
+        print("  - 训练集带状态: data/clusters/train_with_state.parquet")
+        print("  - 测试集带状态: data/clusters/test_with_state.parquet")
+        print("  - 模型文件: data/clusters/gmm_model.joblib")
+        print("  - 特征缩放器: data/clusters/feature_scaler.joblib")
+        print("  - 状态元数据: data/clusters/state_metadata.json")
         print(f"  - 实验日志: logs/clustering_{stats['timestamp']}.json")
-        
+
         if "visualization" in stats:
-            print(f"  - 可视化:")
+            print("  - 可视化:")
             if "umap" in stats["visualization"]:
                 print(f"    - UMAP 图: {stats['visualization']['umap']}")
             if "tsne" in stats["visualization"]:
                 print(f"    - t-SNE 图: {stats['visualization']['tsne']}")
-        
+
     except Exception as e:
         print(f"错误: {e}")
         import traceback

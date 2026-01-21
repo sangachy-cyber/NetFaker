@@ -78,7 +78,7 @@ class CombinationRule(Rule):
 
         Note:
             待添加的规则必须是 Rule 的子类。
-        
+
         Args:
             *args: 可以一次性传入多个规则。
         """

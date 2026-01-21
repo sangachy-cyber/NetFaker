@@ -7,13 +7,14 @@ from typing import Any, Dict
 
 from loguru import logger
 
-from netfaker.core.exceptions import StrategyError
+# 导入策略实现以触发注册
+import netfaker.simcore.strategies.rule_based  # noqa: F401
 
-# 导入所有策略（自动注册）
-from netfaker.simcore.strategies import ml_strategy
-from netfaker.simcore.strategies import rule_based
-# 临时添加model_based策略占位符，避免策略不存在错误
+# 导入本地模块
+from netfaker.core.exceptions import StrategyError
 from netfaker.simcore.strategy import SimulationStrategy, strategy_registry
+
+# 临时添加model_based策略占位符，避免策略不存在错误
 
 
 class ModelBasedStrategy(SimulationStrategy):

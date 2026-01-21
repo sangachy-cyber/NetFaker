@@ -88,7 +88,7 @@ class Engine(object):
 
     @check_parameter
     def __init__(self, holowan_ip: IPAddress, holowan_port: PortNumber, engine_id: EngineID, proxy: Any = None):
-        if proxy == None:
+        if proxy is None:
             self._http_proxy = {}
         self._holowan_ip = holowan_ip
         self._holowan_port = holowan_port
@@ -185,7 +185,7 @@ class Engine(object):
         Args:
             pasword: 旧密码。
             new_password: 新密码。
-            
+
         Returns:
             HoloWANReturn: HoloWAN 返回值。
         """
@@ -476,7 +476,7 @@ class Engine(object):
         return response_str
 
     def _initialize_paths(self):
-        for id in self._paths_info.keys():
+        for id in self._paths_info:
             path = Path(self._get_path_configuration(id))
             self._paths.add_item(str(id), path)
 

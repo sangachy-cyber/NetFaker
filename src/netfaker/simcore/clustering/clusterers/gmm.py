@@ -38,19 +38,19 @@ class GMMClusterer(BaseClusterer):
         max_iter=500,
         random_state=42
     )
-    
+
     # 拟合模型
     clusterer.fit(train_features)
-    
+
     # 预测聚类标签
     labels = clusterer.predict(test_features)
-    
+
     # 预测概率
     probabilities = clusterer.predict_proba(test_features)
-    
+
     # 保存模型
     clusterer.save("models/gmm_model.joblib")
-    
+
     # 加载模型
     loaded_clusterer = GMMClusterer.load("models/gmm_model.joblib")
     ```
@@ -58,7 +58,7 @@ class GMMClusterer(BaseClusterer):
 
     def __init__(self, n_components: int = 3, **kwargs):
         """初始化GMM聚类器。
-        
+
         Args:
             n_components: 聚类数量，默认为3
             **kwargs: 传递给GaussianMixture的其他参数，包括：
@@ -88,12 +88,12 @@ class GMMClusterer(BaseClusterer):
 
     def fit(self, X: np.ndarray) -> 'GMMClusterer':
         """在训练数据上拟合GMM模型。
-        
+
         使用期望最大化(EM)算法在训练数据上拟合高斯混合模型。
-        
+
         Args:
             X: 特征矩阵，形状为 (n_samples, n_features)
-            
+
         Returns:
             GMMClusterer: 拟合后的模型实例，支持链式调用
 
@@ -102,7 +102,7 @@ class GMMClusterer(BaseClusterer):
         # 拟合模型
         clusterer = GMMClusterer(n_components=3)
         clusterer = clusterer.fit(train_features)
-        
+
         # 链式调用
         clusterer = GMMClusterer(n_components=3).fit(train_features)
         ```
@@ -113,12 +113,12 @@ class GMMClusterer(BaseClusterer):
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         """预测样本的聚类标签。
-        
+
         根据拟合的GMM模型，预测每个样本最可能属于的聚类。
-        
+
         Args:
             X: 特征矩阵，形状为 (n_samples, n_features)
-            
+
         Returns:
             np.ndarray: 聚类标签数组，形状为 (n_samples,)，
                 标签值为0到n_components-1的整数
@@ -140,12 +140,12 @@ class GMMClusterer(BaseClusterer):
 
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """预测样本属于每个聚类的概率。
-        
+
         根据拟合的GMM模型，计算每个样本属于每个聚类的后验概率。
-        
+
         Args:
             X: 特征矩阵，形状为 (n_samples, n_features)
-            
+
         Returns:
             np.ndarray: 概率矩阵，形状为 (n_samples, n_components)，
                 每一行的和为1，表示样本属于对应聚类的概率
@@ -168,13 +168,13 @@ class GMMClusterer(BaseClusterer):
 
     def save(self, path: str) -> None:
         """保存模型到文件。
-        
+
         将GMM聚类器的完整状态保存到文件，包括：
         - 内部GaussianMixture模型
         - 聚类数量
         - 模型参数
         - 拟合状态
-        
+
         Args:
             path: 保存路径，推荐使用.joblib扩展名
 
@@ -195,12 +195,12 @@ class GMMClusterer(BaseClusterer):
     @classmethod
     def load(cls, path: str) -> 'GMMClusterer':
         """从文件加载模型。
-        
+
         从之前保存的文件中加载GMM聚类器的完整状态。
-        
+
         Args:
             path: 加载路径，必须是之前用save()方法保存的文件
-            
+
         Returns:
             GMMClusterer: 加载的模型实例，保持原有的拟合状态
 
@@ -210,7 +210,7 @@ class GMMClusterer(BaseClusterer):
         loaded_clusterer = GMMClusterer.load("models/gmm_model.joblib")
         print("模型已加载，聚类数量:", loaded_clusterer.n_components)
         print("模型是否已拟合:", loaded_clusterer._fitted)
-        
+
         # 使用加载的模型进行预测
         labels = loaded_clusterer.predict(test_features)
         ```
@@ -226,7 +226,7 @@ class GMMClusterer(BaseClusterer):
     @property
     def n_components(self) -> int:
         """聚类数量。
-        
+
         Returns:
             int: 模型的聚类数量
         """
@@ -235,7 +235,7 @@ class GMMClusterer(BaseClusterer):
     @property
     def params(self) -> Dict[str, Any]:
         """模型参数。
-        
+
         Returns:
             Dict[str, Any]: 模型参数字典，包括n_components和其他GaussianMixture参数
         """
@@ -244,9 +244,9 @@ class GMMClusterer(BaseClusterer):
     @property
     def bic(self) -> float:
         """贝叶斯信息准则，用于模型选择。
-        
+
         较低的BIC值表示模型性能较好，同时考虑了模型复杂度。
-        
+
         Returns:
             float: 贝叶斯信息准则值
 
@@ -268,9 +268,9 @@ class GMMClusterer(BaseClusterer):
     @property
     def aic(self) -> float:
         """赤池信息准则，用于模型选择。
-        
+
         较低的AIC值表示模型性能较好，同时考虑了模型复杂度。
-        
+
         Returns:
             float: 赤池信息准则值
 

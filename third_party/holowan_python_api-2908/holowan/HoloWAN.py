@@ -20,12 +20,12 @@ class checkParameter(object):
     def __call__(self, function):
         @wraps(function)
         def wrapper(*args, **kwargs):
-            newArgs = list()
-            newKwargs = dict()
+            newArgs = []
+            newKwargs = {}
             sig = inspect.signature(function)  # 提取函数签名
             params = sig.parameters
             va = list(params.values())
-            for arg, param in zip(args, va):
+            for arg, param in zip(args, va, strict=False):
                 if type(arg) == int and param.annotation == float:
                     arg = float(arg)
                 if param.annotation != inspect._empty and not isinstance(arg, param.annotation):
@@ -70,7 +70,7 @@ class checkModify(object):
             sig = inspect.signature(function)  # 提取函数签名
             params = sig.parameters
             va = list(params.values())
-            for arg, param in zip(args, va):
+            for arg, param in zip(args, va, strict=False):
                 if param.name == "matchSize":
                     matchSize = arg
                 if param.name == "modifySize":
@@ -143,7 +143,7 @@ class checkPixelSettings(object):
             sig = inspect.signature(function)   # 提取函数签名
             params = sig.parameters
             va = list(params.values())
-            for arg, param in zip(args, va):
+            for arg, param in zip(args, va, strict=False):
                 if param.name == "enable":
                     if str(arg) not in self.enableList:
                         return '{"errCode":"-502","errMsg":"ERROR","errReason": "The value of "enable" can only be 0 or 1"}'
@@ -547,7 +547,7 @@ class HoloWAN:
                 return r'{{"errCode":"{}","errMsg":"ERROR","errReason":"PATH Error"}}'.format(self.POpathIDError)
             else:
                 return r'{{"errCode":"{}","errMsg":"ERROR","errReason":"PATH is not found"}}'.format(self.POopenPathNotFound)
-        if pathName == "PATH" or pathName == None:
+        if pathName == "PATH" or pathName is None:
             pathName = self.get_path_Name(holowan_ip, holowan_port, engineID, pathID)
         children_node_Map = {"modify_switch": "3", "engine_id": engineID, "path_id": pathID, "path_name": pathName,
                              "if_enable": "2"}
@@ -572,7 +572,7 @@ class HoloWAN:
                 return r'{{"errCode":"{}","errMsg":"ERROR","errReason":"PATH Error"}}'.format(self.POpathIDError)
             else:
                 return r'{{"errCode":"{}","errMsg":"ERROR","errReason":"PATH is not found"}}'.format(self.POclosePathNotFound)
-        if pathName == "PATH" or pathName == None:
+        if pathName == "PATH" or pathName is None:
             pathName = self.get_path_Name(holowan_ip, holowan_port, engineID, pathID)
         children_node_Map = {"modify_switch": "3", "engine_id": engineID, "path_id": pathID, "path_name": pathName,
                              "if_enable": "1"}
@@ -2115,7 +2115,7 @@ class HoloWAN:
             return RuntimeError(r'{"errCode":"-9","errMsg":"ERROR","errReason":"TOS必须输入any或2位十六进制"}')
         # ===============action================== #
         paths_dic = self.get_pathDict_from_engine(holowan_ip, holowan_port, engineID)
-        if action not in [-1, -2] and action not in paths_dic.keys():
+        if action not in [-1, -2] and action not in paths_dic:
             return RuntimeError(r'{"errCode":"-9","errMsg":"ERROR","errReason":"action值输入错误"}')
         xt.add_children(ipv4_node, children_node_Map)
         xt.add_properties(ipv4_node, properties)
@@ -2164,7 +2164,7 @@ class HoloWAN:
             return RuntimeError(r'{"errCode":"-10","errMsg":"ERROR","errReason":"destinationIP必须输入any或ipv6地址"}')
         # ===============Action================== #
         paths_dic = self.get_pathDict_from_engine(holowan_ip, holowan_port, engineID)
-        if action not in [-1, -2] and action not in paths_dic.keys():
+        if action not in [-1, -2] and action not in paths_dic:
             return RuntimeError(r'{"errCode":"-10","errMsg":"ERROR","errReason":"action值输入错误"}')
         xt.add_children(ipv6_node, children_node_Map)
         xt.add_properties(ipv6_node, properties)
@@ -2220,7 +2220,7 @@ class HoloWAN:
             return RuntimeError(r'{"errCode":"-6","errMsg":"ERROR","errReason":"MAC的EtherType输入值不正确"}')
         # ===============Action================== #
         paths_dic = self.get_pathDict_from_engine(holowan_ip, holowan_port, engineID)
-        if action not in [-1, -2] and action not in paths_dic.keys():
+        if action not in [-1, -2] and action not in paths_dic:
             return RuntimeError(r'{"errCode":"-6","errMsg":"ERROR","errReason":"action值输入错误"}')
         xt.add_children(MAC_node, children_node_Map)
         xt.add_properties(MAC_node, properties)
@@ -2368,7 +2368,7 @@ class HoloWAN:
             return RuntimeError(r'{"errCode":"-11","errMsg":"ERROR","errReason":"checkVersion必须为0、4、6中的一个"}')
         # ===============Action================== #
         paths_dic = self.get_pathDict_from_engine(holowan_ip, holowan_port, engineID)
-        if action not in [-1, -2] and action not in paths_dic.keys():
+        if action not in [-1, -2] and action not in paths_dic:
             return RuntimeError(r'{"errCode":"-11","errMsg":"ERROR","errReason":"action值输入错误"}')
         xt.add_children(tcpudp_node, children_node_map)
         xt.add_properties(tcpudp_node, properties)
@@ -2410,7 +2410,7 @@ class HoloWAN:
             return RuntimeError(r'{"errCode":"-11","errMsg":"ERROR","errReason":"checkVersion必须为0、4、6中的一个"}')
         # ===============Action================== #
         paths_dic = self.get_pathDict_from_engine(holowan_ip, holowan_port, engineID)
-        if action not in [-1, -2] and action not in paths_dic.keys():
+        if action not in [-1, -2] and action not in paths_dic:
             return RuntimeError(r'{"errCode":"-11","errMsg":"ERROR","errReason":"action值输入错误"}')
         xt.add_children(tcpudp_node, children_node_map)
         xt.add_properties(tcpudp_node, properties)
@@ -3004,7 +3004,6 @@ class HoloWAN:
 
     # 修改preferences xml下的节点数据
     def set_preferences_tag(self, holowan_ip: str, holowan_port: str, childern_node_Map):
-        parent_node_path_list = []
         pathXMLStr = self.get_preferences(holowan_ip, holowan_port)
         root = xt.xmlString_to_Object(pathXMLStr)
         for node_path in childern_node_Map:
@@ -3229,7 +3228,7 @@ class HoloWAN:
         :param filename: Playback文件名
         :param is_brief: 是否仅获取简要内容
         '''
-        brief = "true" if (isBrief == True) else "false"
+        brief = "true" if (isBrief) else "false"
         requestURL = self._protocol_header(holowan_ip) + "{0}:{1}/get_playback_data?filename={2}&brief={3}".format(holowan_ip, holowan_port, filename, brief)
         return requests.get(requestURL, verify=False).text
 
@@ -3413,22 +3412,15 @@ class HoloWAN:
 
     # 判断引擎是否存在
     def has_engine(self, holowan_ip: str, holowan_port: str, engineID: int):
-        if engineID > 0 and engineID <= self.get_engine_count(holowan_ip, holowan_port):
-            return True
-        else:
-            return False
+        return bool(engineID > 0 and engineID <= self.get_engine_count(holowan_ip, holowan_port))
 
     # 判断链路ID是否正确
     def right_path(self, holowan_ip: str, holowan_port: str, engineID: int, pathID: int):
-        if pathID > 0 and pathID <= 15:
-            return True
-        return False
+        return bool(pathID > 0 and pathID <= 15)
 
     # 判断链路是否存在
     def has_path(self, holowan_ip: str, holowan_port: str, engineID: int, pathID: int):
-        if pathID not in self.get_pathDict_from_engine(holowan_ip, holowan_port, engineID).keys():
-            return False
-        return True
+        return pathID in self.get_pathDict_from_engine(holowan_ip, holowan_port, engineID)
 
     # 判断链路开启状态
     def path_is_open(self, holowan_ip: str, holowan_port: str, engineID: int, pathID: int):
@@ -3568,10 +3560,7 @@ class HoloWAN:
             if key == "downlink":
                 bw_down = round(float(value), 2)
 
-        if network_type == "2G":
-            rate_unit = 2
-        else:
-            rate_unit = 3
+        rate_unit = 2 if network_type == "2G" else 3
 
         for d in range(1, 3):
             resp.append(self.set_Delay_Normal(holowan_ip, holowan_port, engineID, pathID, d, min[d - 1], delay[d - 1], shake[d - 1], 1))

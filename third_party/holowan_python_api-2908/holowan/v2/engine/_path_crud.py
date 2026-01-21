@@ -25,7 +25,7 @@ _IF_ENABLE: str = r"if_enable"
 class PathCRUD(XMLHolder):
     """Path 增删改模板
     此类设计为 path 的增删改模板，作为 Engine 类的工具组件，对此类的属性的设置不会改变 HoloWAN 的配置。
-    
+
     Args:
         modify_switch: 操作类型。
         engine_id: 引擎 id。

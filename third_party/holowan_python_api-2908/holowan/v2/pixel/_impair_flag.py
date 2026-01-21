@@ -129,7 +129,7 @@ class TypeFilter(Filter):
 
     @staticmethod
     def construct_from_node(node: ET.Element):
-        enable = True if node.get("enable") == "1" else False
+        enable = node.get("enable") == "1"
         after = int(node.findtext(Damage.DAMAGE_AFTER))
         _t = TypeFilter(capture_moment=after)
         if not enable:

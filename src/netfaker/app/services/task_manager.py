@@ -107,24 +107,30 @@ class TaskManager:
                 # 使用第一个segment的type作为scenario，或者使用默认值"video_streaming"
                 # 如果场景不支持，使用默认值
                 scenario = segments[0]["type"] if segments else "video_streaming"
+                logger.info(f"处理任务 {task_id}: 提取场景 {scenario}")
                 # 支持的场景列表
                 supported_scenarios = ["video_streaming", "online_gaming", "web_browsing", "file_download"]
                 # 如果场景不支持，使用默认值
                 if scenario not in supported_scenarios:
+                    logger.warning(f"场景 {scenario} 不支持，使用默认值 video_streaming")
                     scenario = "video_streaming"
                 strategy_params["scenario"] = scenario
+                logger.info(f"处理任务 {task_id}: 使用场景 {scenario}")
             else:
                 # 其他策略直接使用segments
                 strategy_params["segments"] = segments
 
             # 生成仿真参数
             logger.info(f"开始生成仿真参数: {task_id}")
+            logger.info(f"使用策略: {actual_strategy}, 参数: {strategy_params}")
             simulation_params = generate_simulation_params(actual_strategy, strategy_params)
+            logger.info(f"仿真参数生成成功: {simulation_params}")
 
             # 生成HoloWAN文件
             holowan_file_path = await self._generate_holowan_file(
                 task_id, target_ip, simulation_params, description
             )
+            logger.info(f"HoloWAN文件生成成功: {holowan_file_path}")
 
             # 更新任务结果
             result = {
@@ -135,6 +141,8 @@ class TaskManager:
             logger.info(f"任务处理完成: {task_id}")
         except Exception as e:
             logger.error(f"任务处理失败: {task_id}, 错误: {e}")
+            import traceback
+            logger.error(f"错误堆栈: {traceback.format_exc()}")
             self.db.update_task_status(task_id, "failed")
 
     async def _generate_holowan_file(self, task_id: str, target_ip: str,

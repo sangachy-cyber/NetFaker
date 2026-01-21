@@ -227,7 +227,7 @@ class DelayUniform(Delay):
             _UNIFORM_ENABLE_REO: "enable_reordering"
         }
         _delay_checker.check_delay_uniform(self.impairment_params)
-        if advanced_setup == None:
+        if advanced_setup is None:
             self._advanced_setup = ChangeMode(mode=0)
         else:
             self._advanced_setup = advanced_setup

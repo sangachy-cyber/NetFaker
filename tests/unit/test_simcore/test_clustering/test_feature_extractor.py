@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+
 from netfaker.simcore.clustering import extract_features_from_window
 
 

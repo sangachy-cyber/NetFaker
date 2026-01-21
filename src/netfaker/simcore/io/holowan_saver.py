@@ -8,6 +8,7 @@ from typing import Dict
 
 import joblib
 import pandas as pd
+from loguru import logger
 
 
 class HoloWANWriter:
@@ -87,7 +88,7 @@ class HoloWANWriter:
 
         # 保存为 Parquet 文件
         df.to_parquet(output_path, index=False)
-        print(f"✅ 保存成功: {output_path}")
+        logger.info(f"✅ 保存成功: {output_path}")
 
     def save_scaler(self, scaler_info: Dict, output_path: str = "data/processed/global_delay_scaler.joblib") -> None:
         """保存全局延迟 scaler。
@@ -113,4 +114,4 @@ class HoloWANWriter:
 
         # 序列化 scaler
         joblib.dump(scaler_info, output_path)
-        print(f"✅ 保存 scaler: {output_path}")
+        logger.info(f"✅ 保存 scaler: {output_path}")

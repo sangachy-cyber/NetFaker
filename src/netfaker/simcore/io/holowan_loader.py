@@ -8,6 +8,7 @@ import os
 from typing import Dict, Optional
 
 import pandas as pd
+from loguru import logger
 
 from netfaker.simcore.utils.holowan import HoloWANFile
 
@@ -45,7 +46,7 @@ class HoloWANLoader:
 
         # 确保目录存在
         if not os.path.exists(self.raw_data_dir):
-            print(f"警告: 目录 {self.raw_data_dir} 不存在")
+            logger.warning(f"警告: 目录 {self.raw_data_dir} 不存在")
             return data_dict
 
         # 遍历目录中的 .txt 文件
@@ -59,11 +60,11 @@ class HoloWANLoader:
                         # 使用文件名（不含扩展名）作为键
                         key = os.path.splitext(filename)[0]
                         data_dict[key] = df
-                        print(f"✅ 成功加载: {filename}")
+                        logger.info(f"✅ 成功加载: {filename}")
                     else:
-                        print(f"⚠️  空数据: {filename}")
+                        logger.warning(f"⚠️  空数据: {filename}")
                 except Exception as e:
-                    print(f"❌ 加载失败 {filename}: {e}")
+                    logger.error(f"❌ 加载失败 {filename}: {e}")
 
         return data_dict
 

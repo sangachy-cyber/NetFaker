@@ -160,10 +160,7 @@ class BackgroundUtilization(XMLHolder):
     @property
     def enable(self) -> bool:
         flag = self.get(_IMPAIRMENT_ENABLE_PROPERTY)
-        if flag == "0":
-            return False
-        else:
-            return True
+        return flag != "0"
 
     def enable_impair(self):
         self.set_property(self.tag, _IMPAIRMENT_ENABLE_PROPERTY, "1")
@@ -324,10 +321,7 @@ class Modify(XMLHolder):
     @property
     def enable(self) -> bool:
         flag = self.get(_IMPAIRMENT_ENABLE_PROPERTY)
-        if flag == "0":
-            return False
-        else:
-            return True
+        return flag != "0"
 
     def enable_impair(self):
         self.set_property(self.tag, _IMPAIRMENT_ENABLE_PROPERTY, "1")
@@ -502,10 +496,7 @@ class MTU(XMLHolder):
     @property
     def enable(self) -> bool:
         flag = self.get(_IMPAIRMENT_ENABLE_PROPERTY)
-        if flag == "0":
-            return False
-        else:
-            return True
+        return flag != "0"
 
     def enable_impair(self):
         self.set_property(self.tag, _IMPAIRMENT_ENABLE_PROPERTY, "1")
@@ -577,10 +568,7 @@ class FrameOverhead(XMLHolder):
     @property
     def enable(self) -> bool:
         flag = self.get(_IMPAIRMENT_ENABLE_PROPERTY)
-        if flag == "0":
-            return False
-        else:
-            return True
+        return flag != "0"
 
     def enable_impair(self):
         self.set_property(self.tag, _IMPAIRMENT_ENABLE_PROPERTY, "1")
@@ -658,10 +646,7 @@ class Delay(XMLHolder):
     @property
     def enable(self) -> bool:
         flag = self.get(_IMPAIRMENT_ENABLE_PROPERTY)
-        if flag == "0":
-            return False
-        else:
-            return True
+        return flag != "0"
 
     def enable_impair(self):
         self.set_property(self.tag, _IMPAIRMENT_ENABLE_PROPERTY, "1")
@@ -754,10 +739,7 @@ class Loss(XMLHolder):
     @property
     def enable(self) -> bool:
         flag = self.get(_IMPAIRMENT_ENABLE_PROPERTY)
-        if flag == "0":
-            return False
-        else:
-            return True
+        return flag != "0"
 
     def enable_impair(self):
         self.set_property(self.tag, _IMPAIRMENT_ENABLE_PROPERTY, "1")
@@ -841,10 +823,7 @@ class Corruption(XMLHolder):
     @property
     def enable(self) -> bool:
         flag = self.get(_IMPAIRMENT_ENABLE_PROPERTY)
-        if flag == "0":
-            return False
-        else:
-            return True
+        return flag != "0"
 
     def enable_impair(self):
         self.set_property(self.tag, _IMPAIRMENT_ENABLE_PROPERTY, "1")
@@ -925,10 +904,7 @@ class Reordering(XMLHolder):
     @property
     def enable(self) -> bool:
         flag = self.get(_IMPAIRMENT_ENABLE_PROPERTY)
-        if flag == "0":
-            return False
-        else:
-            return True
+        return flag != "0"
 
     def enable_impair(self):
         self.set_property(self.tag, _IMPAIRMENT_ENABLE_PROPERTY, "1")
@@ -1012,10 +988,7 @@ class Duplication(XMLHolder):
     @property
     def enable(self) -> bool:
         flag = self.get(_IMPAIRMENT_ENABLE_PROPERTY)
-        if flag == "0":
-            return False
-        else:
-            return True
+        return flag != "0"
 
     def enable_impair(self):
         self.set_property(self.tag, _IMPAIRMENT_ENABLE_PROPERTY, "1")

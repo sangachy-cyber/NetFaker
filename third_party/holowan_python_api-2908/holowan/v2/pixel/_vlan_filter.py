@@ -92,33 +92,21 @@ class VLANFilter(Filter):
 
     @staticmethod
     def construct_from_node(node: ET.Element):
-        if node.find(_FPCP).get(_ANY) == "1":
-            fpcp = _ANY
-        else:
-            fpcp = node.findtext(_FPCP)
+        fpcp = _ANY if node.find(_FPCP).get(_ANY) == "1" else node.findtext(_FPCP)
 
-        if node.find(_FPID).get(_ANY) == "1":
-            fpid = _ANY
-        else:
-            fpid = node.findtext(_FPID)
+        fpid = _ANY if node.find(_FPID).get(_ANY) == "1" else node.findtext(_FPID)
 
         enable_stag = node.findtext(_ENABLE_STAG)
         vlan = VLANFilter(
             fpcp=fpcp, fpid=fpid
         )
         if enable_stag == 1:
-            if node.find(_SPCP).get(_ANY) == "1":
-                spcp = _ANY
-            else:
-                spcp = node.findtext(_SPCP)
+            spcp = _ANY if node.find(_SPCP).get(_ANY) == "1" else node.findtext(_SPCP)
 
-            if node.find(_SPID).get(_ANY) == "1":
-                spid = _ANY
-            else:
-                spid = node.findtext(_SPID)
+            spid = _ANY if node.find(_SPID).get(_ANY) == "1" else node.findtext(_SPID)
             vlan.enable_second_tag(spcp, spid)
 
-        enable = True if node.get("enable") == "1" else False
+        enable = node.get("enable") == "1"
         if not enable:
             vlan.disable_filter()
 

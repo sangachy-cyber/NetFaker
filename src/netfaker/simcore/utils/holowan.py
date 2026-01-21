@@ -10,6 +10,7 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
+from loguru import logger
 
 
 @dataclass
@@ -676,6 +677,6 @@ class HoloWANFile:
         with open(output_path, "w") as f:
             f.write("\n".join(file_content))
 
-        print(f"✅ HoloWAN文件已生成: {output_path}")
+        logger.info(f"✅ HoloWAN文件已生成: {output_path}")
         return output_path
 

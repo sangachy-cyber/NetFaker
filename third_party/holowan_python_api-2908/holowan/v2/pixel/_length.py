@@ -51,7 +51,7 @@ class LengthFilter(Filter):
 
     @staticmethod
     def construct_from_node(node: ET.Element):
-        enable = True if node.get("enable") == "1" else False
+        enable = node.get("enable") == "1"
         len_filter = LengthFilter(
             length_from=int(node.findtext(_LENGTH_FROM)), length_to=int(node.findtext(_LENGTH_TO))
         )

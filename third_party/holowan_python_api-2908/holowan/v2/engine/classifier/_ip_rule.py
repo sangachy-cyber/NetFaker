@@ -44,13 +44,13 @@ def _check_ip_params(function: Callable):
 
     @functools.wraps(function)
     def wrapper(*args, **kwargs):
-        new_args = list()
+        new_args = []
         new_kwargs = {}
         sig = inspect.signature(function)  # 提取函数签名
         params = sig.parameters
         va = list(params.values())
 
-        for arg, param in zip(args, va):
+        for arg, param in zip(args, va, strict=False):
             if type(arg) == int and param.annotation == float:
                 arg = float(arg)
 
@@ -61,16 +61,16 @@ def _check_ip_params(function: Callable):
             new_args.append(arg)
 
         for k, v in kwargs.items():
-            if k == _SRC or k == _DST:
+            if k in (_SRC, _DST):
                 if params[k].annotation == IPv4Address:
-                    if v != _ANY and mt.isIPV4(v) == False:
+                    if v != _ANY and not mt.isIPV4(v):
                         raise ValueError(r"Argument {argument!r} is not a valid IPv4 address, got {got!r}".format(
                             argument=k, got=v
                         ))
                     else:
                         new_kwargs[k] = v
                 elif params[k].annotation == IPv6Address:
-                    if v != _ANY and mt.isIPV6(v) == False:
+                    if v != _ANY and not mt.isIPV6(v):
                         raise ValueError(r"Argument {argument!r} is not a valid IPv6 address, got {got!r}".format(
                             argument=k, got=v
                         ))
@@ -131,7 +131,7 @@ class IPv4Rule(Rule):
     @property
     def action(self) -> PathID:
         """被此规则匹配的报文将被转发到的path id。
-        
+
         Note:
             可读可写。
 
@@ -231,22 +231,13 @@ class IPv4Rule(Rule):
             IPv4Rule 对象。
         """
         src_node = node.find(_SRC)
-        if src_node.get(_ANY) == "1":
-            src = _ANY
-        else:
-            src = node.findtext(_SRC)
+        src = _ANY if src_node.get(_ANY) == "1" else node.findtext(_SRC)
 
         dst_node = node.find(_DST)
-        if dst_node.get(_ANY) == "1":
-            dst = _ANY
-        else:
-            dst = node.findtext(_DST)
+        dst = _ANY if dst_node.get(_ANY) == "1" else node.findtext(_DST)
 
         tos_node = node.find(_TOS)
-        if tos_node.get(_ANY) == "1":
-            tos = _ANY
-        else:
-            tos = node.findtext(_TOS)
+        tos = _ANY if tos_node.get(_ANY) == "1" else node.findtext(_TOS)
 
         rule = IPv4Rule(
             src=src, smask=int(node.findtext(_SRC_MASK)),
@@ -290,7 +281,7 @@ class IPv6Rule(Rule):
     @property
     def action(self) -> PathID:
         """被此规则匹配的报文将被转发到的path id。
-        
+
         Note:
             可读可写。
 
@@ -348,16 +339,10 @@ class IPv6Rule(Rule):
             IPv6Rule 对象。
         """
         src_node = node.find(_SRC)
-        if src_node.get(_ANY) == "1":
-            src = _ANY
-        else:
-            src = node.findtext(_SRC)
+        src = _ANY if src_node.get(_ANY) == "1" else node.findtext(_SRC)
 
         dst_node = node.find(_DST)
-        if dst_node.get(_ANY) == "1":
-            dst = _ANY
-        else:
-            dst = node.findtext(_DST)
+        dst = _ANY if dst_node.get(_ANY) == "1" else node.findtext(_DST)
 
         rule = IPv6Rule(
             src=src, dst=dst, action=int(node.findtext(_ACTION))

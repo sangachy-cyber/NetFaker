@@ -41,7 +41,7 @@ class ExampleLoss(unittest.TestCase):
         min_bursts = [1, 5, 10]
         max_bursts = [10, 20, 50]
 
-        for min_burst, max_burst in zip(min_bursts, max_bursts):
+        for min_burst, max_burst in zip(min_bursts, max_bursts, strict=False):
             self.path = self.engine.get_path_by_id(self.path_id)
             self.path.l2r.loss = LossBurst(probability=0.01, min=min_burst, max=max_burst)
             result = self.engine.apply_path_configuration(self.path)

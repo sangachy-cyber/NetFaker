@@ -22,7 +22,7 @@ class ExampleBandwidth(unittest.TestCase):
         units = [1, 2, 3]  # 1: bps, 2: Kbps, 3: Mbps
         rates = [100, 100, 100]  # 相同带宽，不同单位表示
 
-        for unit, rate in zip(units, rates):
+        for unit, rate in zip(units, rates, strict=False):
             self.path = self.engine.get_path_by_id(self.path_id)
             self.path.l2r.bandwidth = BandwidthFixed(rate=rate, unit=unit)
             result = self.engine.apply_path_configuration(self.path)

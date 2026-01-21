@@ -81,7 +81,7 @@ class Sequential(object):
         self._items[key] = item
 
     def set_item(self,key:str,value:XMLHolder)->None:
-        if key not in self._items.keys():
+        if key not in self._items:
             raise KeyError("Unknown key: {0}".format(key))
         self._items[key] = value
 

@@ -1,3 +1,4 @@
+import contextlib
 import json
 import os
 import time
@@ -6,6 +7,7 @@ from typing import Any, Dict
 import joblib
 import numpy as np
 import pandas as pd
+from loguru import logger
 from sklearn.preprocessing import (
     StandardScaler,  # 使用 StandardScaler 替代 RobustScaler
 )
@@ -37,13 +39,13 @@ class ClusterRunner:
         confidence_threshold=0.85,
         visualize=True
     )
-    
+
     # 执行聚类流程
     results = runner.run(
         "data/train.parquet",
         "data/test.parquet"
     )
-    
+
     # 查看聚类结果
     print("训练集纯净状态比例:", results["train"]["n_pure"] / results["train"]["n_samples"])
     print("测试集纯净状态比例:", results["test"]["n_pure"] / results["test"]["n_samples"])
@@ -53,7 +55,7 @@ class ClusterRunner:
     def __init__(self, algorithm: str = "gmm", n_components: int = 3,
                  confidence_threshold: float = 0.85, visualize: bool = True):
         """初始化聚类执行器。
-        
+
         Args:
             algorithm: 聚类算法，当前仅支持 "gmm"
             n_components: 聚类数量，建议根据实际数据复杂度调整
@@ -82,7 +84,7 @@ class ClusterRunner:
 
     def run(self, train_path: str, test_path: str) -> Dict[str, Any]:
         """执行完整的聚类流程。
-        
+
         该方法是聚类执行器的核心方法，按照以下步骤执行：
         1. 加载训练集和测试集数据
         2. 过滤有效窗口数据
@@ -96,11 +98,11 @@ class ClusterRunner:
         10. 生成统计信息
         11. 保存日志文件
         12. 生成可视化结果（如果启用）
-        
+
         Args:
             train_path: 训练集路径，支持parquet格式
             test_path: 测试集路径，支持parquet格式
-            
+
         Returns:
             Dict[str, Any]: 包含以下信息的字典：
                 - algorithm: 使用的聚类算法
@@ -116,7 +118,7 @@ class ClusterRunner:
         ```python
         # 执行聚类并获取结果
         results = runner.run("data/train.parquet", "data/test.parquet")
-        
+
         # 分析结果
         print("聚类算法:", results["algorithm"])
         print("聚类数量:", results["n_components"])
@@ -131,8 +133,8 @@ class ClusterRunner:
         test_df = pd.read_parquet(test_path)
 
         # 2. 过滤有效窗口
-        train_valid = train_df[train_df["is_valid"] == True]
-        test_valid = test_df[test_df["is_valid"] == True]
+        train_valid = train_df[train_df["is_valid"]]
+        test_valid = test_df[test_df["is_valid"]]
 
         # 3. 提取特征
         train_features = self._extract_features(train_valid)
@@ -194,23 +196,23 @@ class ClusterRunner:
                 )
                 stats["visualization"] = viz_paths
             except Exception as e:
-                print(f"Warning: Visualization failed: {e}")
+                logger.warning(f"可视化失败: {e}")
 
         return stats
 
     def _extract_features(self, df: pd.DataFrame) -> np.ndarray:
         """从网络状态数据框中提取特征向量。
-        
+
         该方法遍历数据框中的每一行，从网络状态窗口中提取
         特征向量，用于后续的聚类分析。
-        
+
         Args:
             df: 包含网络状态窗口的数据框，必须包含以下列：
                 - raw_delay_up: 上行延迟原始数据
                 - raw_loss_up: 上行丢包原始数据
                 - raw_delay_down: 下行延迟原始数据
                 - raw_loss_down: 下行丢包原始数据
-            
+
         Returns:
             np.ndarray: 特征矩阵，形状为 (n_samples, n_features)，
                 其中 n_samples 是数据框中的样本数，
@@ -238,14 +240,14 @@ class ClusterRunner:
     def _save_results(self, train_valid: pd.DataFrame, train_state_info: Dict[str, np.ndarray],
                      test_valid: pd.DataFrame, test_state_info: Dict[str, np.ndarray]):
         """保存聚类结果到文件系统。
-        
+
         该方法将聚类结果保存为以下文件：
         1. 训练集带状态信息的parquet文件
         2. 测试集带状态信息的parquet文件
         3. GMM聚类模型文件
         4. 特征缩放器文件
         5. 状态元数据JSON文件
-        
+
         Args:
             train_valid: 训练集有效窗口数据框
             train_state_info: 训练集状态信息字典，包含：
@@ -302,15 +304,15 @@ class ClusterRunner:
     def _generate_stats(self, train_state_info: Dict[str, np.ndarray],
                        test_state_info: Dict[str, np.ndarray]) -> Dict[str, Any]:
         """生成聚类统计信息。
-        
+
         该方法从训练集和测试集的状态信息中提取统计数据，
         包括样本数量、纯净状态数量、混合状态数量、
         状态分布、平均概率和概率标准差等。
-        
+
         Args:
             train_state_info: 训练集状态信息字典
             test_state_info: 测试集状态信息字典
-            
+
         Returns:
             Dict[str, Any]: 包含以下统计信息的字典：
                 - algorithm: 使用的聚类算法
@@ -325,7 +327,7 @@ class ClusterRunner:
         ```python
         # 生成统计信息
         stats = runner._generate_stats(train_state_info, test_state_info)
-        
+
         # 分析统计结果
         print("训练集纯净状态比例:", stats["train"]["n_pure"] / stats["train"]["n_samples"])
         print("测试集纯净状态比例:", stats["test"]["n_pure"] / stats["test"]["n_samples"])
@@ -350,7 +352,7 @@ class ClusterRunner:
                 "n_samples": len(train_state_ids),
                 "n_pure": int(np.sum(train_is_pure)),
                 "n_mixed": int(np.sum(~train_is_pure)),
-                "state_distribution": {int(k): int(v) for k, v in zip(*np.unique(train_state_ids, return_counts=True))},
+                "state_distribution": {int(k): int(v) for k, v in zip(*np.unique(train_state_ids, return_counts=True), strict=False)},
                 "mean_proba": float(np.mean(train_state_probas)),
                 "std_proba": float(np.std(train_state_probas))
             },
@@ -358,7 +360,7 @@ class ClusterRunner:
                 "n_samples": len(test_state_ids),
                 "n_pure": int(np.sum(test_is_pure)),
                 "n_mixed": int(np.sum(~test_is_pure)),
-                "state_distribution": {int(k): int(v) for k, v in zip(*np.unique(test_state_ids, return_counts=True))},
+                "state_distribution": {int(k): int(v) for k, v in zip(*np.unique(test_state_ids, return_counts=True), strict=False)},
                 "mean_proba": float(np.mean(test_state_probas)),
                 "std_proba": float(np.std(test_state_probas))
             }
@@ -366,22 +368,20 @@ class ClusterRunner:
 
         # 添加 GMM 特定统计信息
         if self.algorithm == "gmm" and self.clusterer:
-            try:
+            with contextlib.suppress(BaseException):
                 stats["gmm"] = {
                     "bic": float(self.clusterer.bic),
                     "aic": float(self.clusterer.aic)
                 }
-            except:
-                pass
 
         return stats
 
     def _save_log(self, stats: Dict[str, Any]):
         """保存聚类统计信息到日志文件。
-        
+
         该方法将聚类统计信息保存为JSON格式的日志文件，
         便于后续分析和调试。
-        
+
         Args:
             stats: 统计信息字典，包含算法参数、训练集和测试集统计数据等
 
@@ -393,7 +393,7 @@ class ClusterRunner:
         ```python
         # 保存日志
         runner._save_log(stats)
-        
+
         # 日志文件路径类似于：logs/clustering_1620000000.json
         ```
         """

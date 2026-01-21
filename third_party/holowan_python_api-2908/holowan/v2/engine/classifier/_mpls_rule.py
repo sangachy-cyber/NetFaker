@@ -82,7 +82,7 @@ class MPLSRule(Rule):
             MPLSRule 对象。
         """
         label = node.findtext(_LABEL)
-        if label == None and node.find(_LABEL).get(_ANY) == "1":
+        if label is None and node.find(_LABEL).get(_ANY) == "1":
             label = _ANY
 
         rule = MPLSRule(

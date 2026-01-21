@@ -21,9 +21,9 @@ def _check_mac_rule_parameters(function: Callable):
     def __is_port_range(port_name: str, port_str: str):
         range = port_str.split("-")
         start, end = range[0], range[1]
-        if mt.isPort(start) == False:
+        if not mt.isPort(start):
             raise ValueError("The start of '{0}' port range is not a valid port number".format(port_name))
-        if mt.isPort(end) == False:
+        if not mt.isPort(end):
             raise ValueError("The end of '{0}' port range is not a valid port number".format(port_name))
         if int(start) - int(end) >= 0:
             raise ValueError(
@@ -35,9 +35,9 @@ def _check_mac_rule_parameters(function: Callable):
     def wrapper(*args, **kwargs):
         new_kwargs = {}
         for k, v in kwargs.items():
-            if k == _SRC or k == _DST:
+            if k in (_SRC, _DST):
                 if isinstance(v, int):
-                    if mt.isPort(str(v)) == False:
+                    if not mt.isPort(str(v)):
                         # int, not valid
                         raise TypeError(r"Argument {argument!r} is not a valid port number.".format(argument=k))
                     else:
@@ -52,7 +52,7 @@ def _check_mac_rule_parameters(function: Callable):
                         if v == _ANY or __is_port_range(k, v):
                             new_kwargs[k] = v
                 elif isinstance(v, list):
-                    for idx, pt in enumerate(set(v)):
+                    for _idx, pt in enumerate(set(v)):
                         if mt.isPort(str(pt)):
                             new_kwargs[k] = v
                         else:
@@ -129,24 +129,15 @@ class MACFilter(Filter):
 
     @staticmethod
     def construct_from_node(node: ET.Element) -> 'MACFilter':
-        if node.find(_SRC).get(_ANY) == "1":
-            src = _ANY
-        else:
-            src = node.findtext(_SRC)
-        if node.find(_DST).get(_ANY) == "1":
-            dst = _ANY
-        else:
-            dst = node.findtext(_DST)
-        if node.find(_TYPE).get(_ANY) == "1":
-            type = _ANY
-        else:
-            type = node.findtext(_TYPE)
+        src = _ANY if node.find(_SRC).get(_ANY) == "1" else node.findtext(_SRC)
+        dst = _ANY if node.find(_DST).get(_ANY) == "1" else node.findtext(_DST)
+        type = _ANY if node.find(_TYPE).get(_ANY) == "1" else node.findtext(_TYPE)
         mac = MACFilter(
             src=src,
             dst=dst,
             type=type,
         )
-        enable = True if node.get("enable") == "1" else False
+        enable = node.get("enable") == "1"
         if not enable:
             mac.disable_filter()
         return mac

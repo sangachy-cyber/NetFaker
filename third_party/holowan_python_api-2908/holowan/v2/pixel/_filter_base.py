@@ -32,10 +32,7 @@ class Filter(XMLHolder):
     @property
     def enable(self) -> bool:
         flag = self.get(_FILTER_ENABLE_PROPERTY)
-        if flag == "0":
-            return False
-        else:
-            return True
+        return flag != "0"
 
     def enable_filter(self):
         self.set_property(self.tag, _FILTER_ENABLE_PROPERTY, "1")

@@ -135,9 +135,9 @@ def getStringTagText(xmlString: str, tagPath: str, condition: dict) -> None:
             # if index < len(objectPathList):
             xmlObjectList = get_nodes(xmlObject, objectPathList[index])
             for xo in xmlObjectList:
-                x = xmlObject_to_string(xo)
-                a = get_node(xo, objectConditionList[index]).text
-                b = str(list(condition.values())[index])
+                xmlObject_to_string(xo)
+                get_node(xo, objectConditionList[index]).text
+                str(list(condition.values())[index])
                 if get_node(xo, objectConditionList[index]).text == str(list(condition.values())[index]):
                     xmlObject = xo
         node = get_node(xmlObject, objectConditionList[-1])

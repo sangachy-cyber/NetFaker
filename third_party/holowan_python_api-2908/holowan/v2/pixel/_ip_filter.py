@@ -93,24 +93,15 @@ class IPv4Filter(Filter):
     @staticmethod
     def construct_from_node(node: ET.Element):
         src_node = node.find(_SRC)
-        if src_node.get(_ANY) == "1":
-            src = _ANY
-        else:
-            src = node.findtext(_SRC)
+        src = _ANY if src_node.get(_ANY) == "1" else node.findtext(_SRC)
 
         dst_node = node.find(_DST)
-        if dst_node.get(_ANY) == "1":
-            dst = _ANY
-        else:
-            dst = node.findtext(_DST)
+        dst = _ANY if dst_node.get(_ANY) == "1" else node.findtext(_DST)
 
         tos_node = node.find(_TOS)
-        if tos_node.get(_ANY) == "1":
-            tos = _ANY
-        else:
-            tos = node.findtext(_TOS)
+        tos = _ANY if tos_node.get(_ANY) == "1" else node.findtext(_TOS)
 
-        enable = True if node.get("enable") == "1" else False
+        enable = node.get("enable") == "1"
         ipv4 = IPv4Filter(
             src=src, smask=int(node.findtext(_SRC_MASK)),
             dst=dst, dmask=int(node.findtext(_DST_MASK)),
@@ -163,18 +154,12 @@ class IPv6Filter(Filter):
     @staticmethod
     def construct_from_node(node: ET.Element):
         src_node = node.find(_SRC)
-        if src_node.get(_ANY) == "1":
-            src = _ANY
-        else:
-            src = node.findtext(_SRC)
+        src = _ANY if src_node.get(_ANY) == "1" else node.findtext(_SRC)
 
         dst_node = node.find(_DST)
-        if dst_node.get(_ANY) == "1":
-            dst = _ANY
-        else:
-            dst = node.findtext(_DST)
+        dst = _ANY if dst_node.get(_ANY) == "1" else node.findtext(_DST)
 
-        enable = True if node.get("enable") == "1" else False
+        enable = node.get("enable") == "1"
         ipv6 = IPv6Filter(
             src=src, dst=dst
         )

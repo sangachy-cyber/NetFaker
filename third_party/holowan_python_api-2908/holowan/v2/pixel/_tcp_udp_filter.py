@@ -39,9 +39,9 @@ def _check_tcp_udp_stcp_parameters(function: Callable):
     def __is_port_range(port_name: str, port_str: str):
         range = port_str.split("-")
         start, end = range[0], range[1]
-        if mt.isPort(start) == False:
+        if not mt.isPort(start):
             raise ValueError("The start of '{0}' port range is not a valid port number".format(port_name))
-        if mt.isPort(end) == False:
+        if not mt.isPort(end):
             raise ValueError("The end of '{0}' port range is not a valid port number".format(port_name))
         if int(start) - int(end) >= 0:
             raise ValueError(
@@ -53,9 +53,9 @@ def _check_tcp_udp_stcp_parameters(function: Callable):
     def wrapper(*args, **kwargs):
         new_kwargs = {}
         for k, v in kwargs.items():
-            if k == _SRC or k == _DST:
+            if k in (_SRC, _DST):
                 if isinstance(v, int):
-                    if mt.isPort(str(v)) == False:
+                    if not mt.isPort(str(v)):
                         # int, not valid
                         raise TypeError(r"Argument {argument!r} is not a valid port number.".format(argument=k))
                     else:
@@ -70,7 +70,7 @@ def _check_tcp_udp_stcp_parameters(function: Callable):
                         if v == _ANY or __is_port_range(k, v):
                             new_kwargs[k] = v
                 elif isinstance(v, list):
-                    for idx, pt in enumerate(set(v)):
+                    for _idx, pt in enumerate(set(v)):
                         if mt.isPort(str(pt)):
                             new_kwargs[k] = v
                         else:
@@ -186,7 +186,7 @@ class TCPFilter(Filter):
             for port in list(dst_node):
                 dst.append(port.text)
 
-        enable = True if node.get("enable") == "1" else False
+        enable = node.get("enable") == "1"
         tcp = TCPFilter(
             src=src, dst=dst,
             check_version=int(node.findtext(_CHECK_VERSION)),
@@ -276,7 +276,7 @@ class UDPFilter(Filter):
             for port in list(dst_node):
                 src.append(port.text)
 
-        enable = True if node.get("enable") == "1" else False
+        enable = node.get("enable") == "1"
         udp = UDPFilter(
             src=src, dst=dst,
             check_version=int(node.findtext(_CHECK_VERSION)),
@@ -368,7 +368,7 @@ class SCTPFilter(Filter):
             for port in list(dst_node):
                 src.append(port.text)
 
-        enable = True if node.get("enable") == "1" else False
+        enable = node.get("enable") == "1"
         sctp = SCTPFilter(
             src=src, dst=dst,
             check_version=int(node.findtext(_CHECK_VERSION)),

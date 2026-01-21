@@ -7,34 +7,35 @@
 """
 
 import os
+from typing import Any, Dict, List
+
 import pandas as pd
-from typing import List, Dict, Any
 
 
 class DatasetSaver:
     """将窗口数据保存为 Parquet 文件的类。"""
-    
+
     def __init__(self, datasets_dir: str = 'data/datasets/'):
         """初始化数据集保存器。
-        
+
         Args:
             datasets_dir: 保存数据集的目录
         """
         self.datasets_dir = datasets_dir
-        
+
         # 创建目录（如果不存在）
         os.makedirs(datasets_dir, exist_ok=True)
-    
+
     def save_dataset(self, windows: List[Dict[str, Any]], filename: str) -> int:
         """将窗口保存为 Parquet 数据集。
-        
+
         Args:
             windows: 窗口字典列表
             filename: 输出文件名
-        
+
         Returns:
             保存的样本数量
-        
+
         Examples:
             >>> saver = DatasetSaver()
             >>> windows = [
@@ -67,27 +68,27 @@ class DatasetSaver:
         else:
             # 将窗口转换为 DataFrame
             df = self._windows_to_dataframe(windows)
-        
+
         # 确保输出路径
         output_path = os.path.join(self.datasets_dir, filename)
-        
+
         # 保存为 Parquet
         df.to_parquet(output_path, index=False)
-        
+
         return len(df)
-    
+
     def _windows_to_dataframe(self, windows: List[Dict[str, Any]]) -> pd.DataFrame:
         """将窗口列表转换为 DataFrame。
-        
+
         Args:
             windows: 窗口字典列表
-        
+
         Returns:
             包含所有必要列的 DataFrame
         """
         # 转换为 DataFrame
         df = pd.DataFrame(windows)
-        
+
         # 确保所有必要列存在
         required_columns = [
             'window_id',
@@ -108,7 +109,7 @@ class DatasetSaver:
             'norm_loss_down',
             'norm_bw_down'
         ]
-        
+
         # 添加缺失的列，设置默认值
         for col in required_columns:
             if col not in df.columns:
@@ -118,20 +119,20 @@ class DatasetSaver:
                     df[col] = True
                 else:
                     df[col] = None
-        
+
         # 重新排序列以匹配规范
         df = df[required_columns]
-        
+
         # 设置正确的数据类型
         df['start_index'] = df['start_index'].astype('int64')
         df['state_id'] = df['state_id'].astype('int32')
         df['is_valid'] = df['is_valid'].astype('bool')
-        
+
         return df
 
     def _create_empty_dataframe(self) -> pd.DataFrame:
         """创建具有正确架构的空 DataFrame。
-        
+
         Returns:
             包含所有必要列的空 DataFrame
         """
@@ -154,7 +155,7 @@ class DatasetSaver:
             'norm_loss_down',
             'norm_bw_down'
         ]
-        
+
         dtypes = {
             'window_id': 'object',
             'source_file': 'object',
@@ -174,5 +175,5 @@ class DatasetSaver:
             'norm_loss_down': 'object', # 浮点数列表
             'norm_bw_down': 'object'    # 浮点数列表
         }
-        
+
         return pd.DataFrame(columns=columns).astype(dtypes)

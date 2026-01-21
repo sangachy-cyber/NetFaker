@@ -22,13 +22,13 @@ from holowan.v2.engine.classifier._tcp_udp_sctp_rule import SCTPRule, TCPRule, U
 from holowan.v2.engine.classifier._vlan_rule import VLANRule
 
 _CLF_XML_FORMAT = """<?xml version="1.0" encoding="utf-8"?>
-<clc>                                   
-    <engine_id></engine_id>            
-    <port>                             
-        <port_id></port_id>            
+<clc>
+    <engine_id></engine_id>
+    <port>
+        <port_id></port_id>
     </port>
-    <port>                             
-        <port_id></port_id>            
+    <port>
+        <port_id></port_id>
     </port>
 </clc>
 """
@@ -41,7 +41,7 @@ _CLF_TAG_NAME = r"clc"
 class PacketClassifier(XMLHolder):
     """HoloWAN 报文分类器
     此类设计为解析、维护 HoloWAN 报文分类器的 xml 配置。设计为：设备无关，引擎无关。
-    
+
     Note:
         此类不具备与 HoloWAN 设备的通讯能力，对此类的属性的设置不会改变 HoloWAN 的配置。
 
@@ -56,7 +56,7 @@ class PacketClassifier(XMLHolder):
 
     @check_parameter
     def __init__(self, clf_xml: HoloWANConfigXML = None) -> None:
-        if clf_xml == None:
+        if clf_xml is None:
             clf_xml = _CLF_XML_FORMAT
         root = xt.xmlString_to_Object(clf_xml)
         super().__init__(_CLF_TAG_NAME, list(root))
@@ -69,7 +69,7 @@ class PacketClassifier(XMLHolder):
     @property
     def port1(self) -> Sequential:
         """报文分类器的 port1 部分。
-        
+
         Note:
             可读可写。报文分类器的一个 port 为序列容器 Sequential，规则在该容器中为有序的。
             可以使用 Sequential 类的方法对其中的元素进行操作。
@@ -93,7 +93,7 @@ class PacketClassifier(XMLHolder):
     @property
     def port2(self) -> Sequential:
         """报文分类器的 port2 部分。
-        
+
         Note:
             可读可写。报文分类器的一个 port 为序列容器 Sequential，规则在该容器中为有序的。
             可以使用 Sequential 类的方法对其中的元素进行操作。
@@ -106,10 +106,7 @@ class PacketClassifier(XMLHolder):
             raise ValueError("Argument must be Rule, but got {got!r}, value {value!r}".format(
                 got=type(rule), value=rule
             ))
-        if port % 2 == 1:
-            rules = self._port1
-        else:
-            rules = self._port2
+        rules = self._port1 if port % 2 == 1 else self._port2
         rules.append(rule)
 
     def insert_rule(self, port: int, index: int, rule: Rule):
@@ -117,10 +114,7 @@ class PacketClassifier(XMLHolder):
             raise ValueError("Argument must be Rule, but got {got!r}, value {value!r}".format(
                 got=type(rule), value=rule
             ))
-        if port % 2 == 1:
-            rules = self._port1
-        else:
-            rules = self._port2
+        rules = self._port1 if port % 2 == 1 else self._port2
         rules.insert(index, rule)
 
     def modify_rule_by_idx(self, port: int, index: int, rule: Rule) -> None:
@@ -129,26 +123,17 @@ class PacketClassifier(XMLHolder):
                 got=type(rule), value=rule
             ))
 
-        if port % 2 == 1:
-            rules = self._port1
-        else:
-            rules = self._port2
+        rules = self._port1 if port % 2 == 1 else self._port2
 
         rules.remove_item_by_idx(index)
         rules.insert(index, rule)
 
     def rearrange_rules(self, port: int, order: list):
-        if port % 2 == 1:
-            rules = self._port1
-        else:
-            rules = self._port2
+        rules = self._port1 if port % 2 == 1 else self._port2
         rules.rearrange(order)
 
     def remove_rule(self, port: int, index: int) -> None:
-        if port % 2 == 1:
-            rules = self._port1
-        else:
-            rules = self._port2
+        rules = self._port1 if port % 2 == 1 else self._port2
 
         rules.remove_item_by_idx(index)
 
@@ -207,7 +192,7 @@ class PacketClassifier(XMLHolder):
 
     def reset(self) -> None:
         """重置报文分类器。清空所有规则。
-        
+
         """
         self._port1 = Sequential()
         self._port2 = Sequential()
@@ -221,14 +206,14 @@ class PacketClassifier(XMLHolder):
             if item.tag == _PORT_ID:
                 continue
             rule = rule_factory(item)
-            if rule != None:
+            if rule is not None:
                 self._port1.add_item(str(idx), rule)
 
         for idx, item in enumerate(list(self._port2_root)):
             if item.tag == _PORT_ID:
                 continue
             rule = rule_factory(item)
-            if rule != None:
+            if rule is not None:
                 self._port2.add_item(str(idx), rule)
 
     def __str__(self):

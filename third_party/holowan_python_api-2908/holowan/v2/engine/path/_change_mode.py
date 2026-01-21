@@ -77,17 +77,17 @@ class ChangeMode(XMLHolder):
             pass
         else:
             if self._mode == 1 and len(kwargs) == 5:
-                if kwargs["phase"] == None:
+                if kwargs["phase"] is None:
                     raise ValueError("Missing argument 'phase' in mode 1.")
                 else:
                     self.parameters[_CHANGE_MODE_PHASE] = kwargs["phase"] / 100
             elif self._mode == 2 and len(kwargs) == 6:
-                if kwargs["rise"] == None:
+                if kwargs["rise"] is None:
                     raise ValueError("Missing argument 'rise' in mode 2.")
                 else:
                     self.parameters[_CHANGE_MODE_RISE] = kwargs["rise"]
 
-                if kwargs["fall"] == None:
+                if kwargs["fall"] is None:
                     raise ValueError("Missing argument 'fall' in mode 2.")
                 else:
                     self.parameters[_CHANGE_MODE_FALL] = kwargs["fall"]

@@ -79,25 +79,25 @@ class FilterSettings(XMLHolder):
     def _update_settings(self):
         self.clear_children()
         self.add_children(self._basic_param)
-        if self._type != None:
+        if self._type is not None:
             self.add_child(self._type.node)
 
-        if self._mac != None:
+        if self._mac is not None:
             self.add_child(self._mac.node)
 
-        if self._vlan != None:
+        if self._vlan is not None:
             self.add_child(self._vlan.node)
 
-        if self._ipv4 != None:
+        if self._ipv4 is not None:
             self.add_child(self._ipv4.node)
 
-        if self._ipv6 != None:
+        if self._ipv6 is not None:
             self.add_child(self._ipv6.node)
 
-        if self._tcp_udp_sctp != None:
+        if self._tcp_udp_sctp is not None:
             self.add_child(self._tcp_udp_sctp.node)
 
-        if self._pk_length != None:
+        if self._pk_length is not None:
             self.add_child(self._pk_length.node)
 
     @property
@@ -239,11 +239,11 @@ class FilterSettings(XMLHolder):
         for n in list(node):
             filter_name = n.tag
             if n.tag == "pid" or n.tag == "direction":
-                path_enable = True if node.find(_CAPTURE_PATH).get("enable") == "1" else False
+                path_enable = node.find(_CAPTURE_PATH).get("enable") == "1"
                 if path_enable:
                     fs.enable_path()
             elif filter_name == "direction":
-                dir_enable = True if node.find(_CAPTURE_DIRECTION).get("enable") == "1" else False
+                dir_enable = node.find(_CAPTURE_DIRECTION).get("enable") == "1"
                 if dir_enable:
                     fs.enable_direction()
             elif filter_name == "mac":
@@ -330,7 +330,7 @@ class Pixel(object):
             fs.ipv4 = filter
         elif isinstance(filter, IPv6Filter):
             fs.ipv6 = filter
-        elif isinstance(filter, TCPFilter) or isinstance(filter, UDPFilter) or isinstance(filter, SCTPFilter):
+        elif isinstance(filter, (TCPFilter, UDPFilter, SCTPFilter)):
             fs.tcp_udp_sctp = filter
         elif isinstance(filter, LengthFilter):
             fs.packet_length = filter
@@ -382,7 +382,7 @@ class Pixel(object):
 
     def set_capture_mode(self, mode, path_id: PathID = None):
         if mode == PixelMode.ONE_PATH:
-            if path_id == None:
+            if path_id is None:
                 raise ValueError(
                     "When pixel capture mode is PixelMode.ONE_PATH, the argument 'path_id' can not be None.")
         else:

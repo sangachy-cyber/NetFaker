@@ -20,7 +20,7 @@ class StateNamer:
     def __init__(self, n_components: int = 3, confidence_threshold: float = 0.85):
         """
         初始化状态命名器。
-        
+
         Args:
             n_components: GMM 聚类数量
             confidence_threshold: 纯净状态的置信度阈值
@@ -33,7 +33,7 @@ class StateNamer:
     def _generate_state_mapping(self) -> Dict[Tuple[int, ...], Dict[str, Any]]:
         """
         生成状态映射字典。
-        
+
         Returns:
             状态映射字典，键为基础状态元组，值为包含 state_id 和 state_name 的字典
         """
@@ -64,10 +64,10 @@ class StateNamer:
     def _get_base_state_name(self, component_id: int) -> str:
         """
         获取基础状态名称。
-        
+
         Args:
             component_id: 基础状态 ID
-            
+
         Returns:
             基础状态名称
         """
@@ -79,7 +79,7 @@ class StateNamer:
     def _generate_color_mapping(self) -> Dict[int, str]:
         """
         生成状态颜色映射。
-        
+
         Returns:
             颜色映射字典，键为 state_id，值为颜色代码
         """
@@ -107,10 +107,10 @@ class StateNamer:
     def assign_states(self, probabilities: np.ndarray) -> Dict[str, np.ndarray]:
         """
         为样本分配状态。
-        
+
         Args:
             probabilities: 后验概率矩阵，形状为 (n_samples, n_components)
-            
+
         Returns:
             包含状态信息的字典
         """
@@ -166,7 +166,7 @@ class StateNamer:
     def generate_metadata(self) -> Dict[str, Any]:
         """
         生成状态元数据。
-        
+
         Returns:
             状态元数据字典
         """
@@ -195,7 +195,7 @@ class StateNamer:
     def save_metadata(self, path: str) -> None:
         """
         保存状态元数据到文件。
-        
+
         Args:
             path: 保存路径
         """
@@ -211,7 +211,7 @@ class StateNamer:
     def total_states(self) -> int:
         """
         总状态数。
-        
+
         Returns:
             总状态数
         """
@@ -220,14 +220,14 @@ class StateNamer:
     def get_state_info(self, state_id: int) -> Dict[str, Any]:
         """
         根据 state_id 获取状态信息。
-        
+
         Args:
             state_id: 状态 ID
-            
+
         Returns:
             状态信息字典
         """
-        for state_tuple, state_info in self.state_mapping.items():
+        for _state_tuple, state_info in self.state_mapping.items():
             if state_info["state_id"] == state_id:
                 return {
                     **state_info,

@@ -21,14 +21,14 @@ class XMLHolder(ET.Element):
          <tag>
 
     XMLHolder 可以进行嵌套。但类中实现的方法为对<tag>下子节点的增删改查(只对子节点)。
-    
+
     """
 
     def __init__(self, tag_name: str, children: Union[dict, List[ET.Element]] = None) -> None:
         super().__init__(tag_name)
         # TODO: 异常处理
         self.tag = tag_name
-        if children != None:
+        if children is not None:
             self.add_children(children)
 
     def set_node_text(self, target_node: str, value: Any) -> None:
