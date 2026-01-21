@@ -12,6 +12,10 @@ __pycache__/
 # Output directories
 output/
 data/db/
+data/clusters/
+data/datasets/
+data/processed/
+logs/
 
 # C extensions
 *.so
