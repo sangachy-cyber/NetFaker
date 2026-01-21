@@ -37,20 +37,49 @@ def main():
         default="data/datasets/test.parquet",
         help="测试集路径（默认：data/datasets/test.parquet）"
     )
+    parser.add_argument(
+        "--confidence-threshold",
+        type=float,
+        default=0.85,
+        help="纯净状态的置信度阈值（默认：0.85）"
+    )
+    parser.add_argument(
+        "--visualize",
+        action="store_true",
+        default=True,
+        help="生成可视化（默认：True）"
+    )
+    parser.add_argument(
+        "--no-visualize",
+        action="store_false",
+        dest="visualize",
+        help="禁用可视化"
+    )
+    parser.add_argument(
+        "--assign-test-states",
+        action="store_true",
+        default=True,
+        help="为测试集分配状态（默认：True）"
+    )
     
     args = parser.parse_args()
     
     print(f"=== HoloWAN 聚类与状态生成模块 ===")
     print(f"算法: {args.algorithm}")
     print(f"聚类数量: {args.n_components}")
+    print(f"置信度阈值: {args.confidence_threshold}")
     print(f"训练集: {args.train_path}")
     print(f"测试集: {args.test_path}")
+    print(f"可视化: {args.visualize}")
+    print(f"为测试集分配状态: {args.assign_test_states}")
     print()
     
     # 初始化并运行聚类执行器
     runner = ClusterRunner(
         algorithm=args.algorithm,
-        n_components=args.n_components
+        n_components=args.n_components,
+        confidence_threshold=args.confidence_threshold,
+        visualize=args.visualize
     )
     
     try:
@@ -71,7 +100,15 @@ def main():
         print(f"  - 测试集带状态: data/clusters/test_with_state.parquet")
         print(f"  - 模型文件: data/clusters/gmm_model.joblib")
         print(f"  - 特征缩放器: data/clusters/feature_scaler.joblib")
+        print(f"  - 状态元数据: data/clusters/state_metadata.json")
         print(f"  - 实验日志: logs/clustering_{stats['timestamp']}.json")
+        
+        if "visualization" in stats:
+            print(f"  - 可视化:")
+            if "umap" in stats["visualization"]:
+                print(f"    - UMAP 图: {stats['visualization']['umap']}")
+            if "tsne" in stats["visualization"]:
+                print(f"    - t-SNE 图: {stats['visualization']['tsne']}")
         
     except Exception as e:
         print(f"错误: {e}")

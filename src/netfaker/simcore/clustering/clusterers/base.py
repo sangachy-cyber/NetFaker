@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any
+from typing import Any, Dict
+
 import numpy as np
 
 
@@ -8,7 +9,7 @@ class BaseClusterer(ABC):
     聚类算法基类，定义统一接口。
     支持未来扩展 KMeans、DBSCAN 等算法。
     """
-    
+
     @abstractmethod
     def fit(self, X: np.ndarray) -> 'BaseClusterer':
         """
@@ -21,7 +22,7 @@ class BaseClusterer(ABC):
             self: 拟合后的模型实例
         """
         pass
-    
+
     @abstractmethod
     def predict(self, X: np.ndarray) -> np.ndarray:
         """
@@ -34,7 +35,7 @@ class BaseClusterer(ABC):
             聚类标签数组，形状为 (n_samples,)
         """
         pass
-    
+
     @abstractmethod
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
         """
@@ -47,7 +48,7 @@ class BaseClusterer(ABC):
             概率矩阵，形状为 (n_samples, n_components)
         """
         pass
-    
+
     @abstractmethod
     def save(self, path: str) -> None:
         """
@@ -57,7 +58,7 @@ class BaseClusterer(ABC):
             path: 保存路径
         """
         pass
-    
+
     @classmethod
     @abstractmethod
     def load(cls, path: str) -> 'BaseClusterer':
@@ -71,7 +72,7 @@ class BaseClusterer(ABC):
             加载的模型实例
         """
         pass
-    
+
     @property
     @abstractmethod
     def n_components(self) -> int:
@@ -79,7 +80,7 @@ class BaseClusterer(ABC):
         聚类数量。
         """
         pass
-    
+
     @property
     @abstractmethod
     def params(self) -> Dict[str, Any]:
