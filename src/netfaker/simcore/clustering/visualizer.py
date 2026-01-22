@@ -30,6 +30,7 @@ try:
     UMAP_AVAILABLE = True
 except ImportError:
     UMAP_AVAILABLE = False
+    print("警告: UMAP依赖未安装，UMAP可视化功能将不可用。您可以使用 'pip install umap-learn' 安装。")
 
 
 class Visualizer:
