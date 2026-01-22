@@ -405,8 +405,8 @@ wheels = [
 
 [[package]]
 name = "holowan"
-version = "2908"
-source = { directory = "third_party/holowan_python_api-2908" }
+version = "2909"
+source = { directory = "third_party/holowan_python_api-2909" }
 dependencies = [
     { name = "requests" },
 ]
@@ -674,7 +674,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.100.0" },
-    { name = "holowan", directory = "third_party/holowan_python_api-2908" },
+    { name = "holowan", directory = "third_party/holowan_python_api-2909" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28.0" },
     { name = "loguru", specifier = ">=0.7.3" },
     { name = "matplotlib", specifier = ">=3.8.0" },
