@@ -198,6 +198,26 @@ class ClusterRunner:
             except Exception as e:
                 logger.warning(f"可视化失败: {e}")
 
+        # 13. 加载带状态信息的数据框，用于挑选典型窗口
+        train_with_state = pd.read_parquet("data/clusters/train_with_state.parquet")
+        test_with_state = pd.read_parquet("data/clusters/test_with_state.parquet")
+
+        # 14. 挑选典型窗口
+        train_typical_windows = self._select_typical_windows(train_with_state)
+        test_typical_windows = self._select_typical_windows(test_with_state)
+
+        # 15. 保存典型窗口
+        self._save_typical_windows(train_typical_windows, "train")
+        self._save_typical_windows(test_typical_windows, "test")
+
+        # 16. 可视化典型窗口
+        if self.visualize:
+            try:
+                self._visualize_typical_windows(train_typical_windows, "train")
+                self._visualize_typical_windows(test_typical_windows, "test")
+            except Exception as e:
+                logger.warning(f"典型窗口可视化失败: {e}")
+
         return stats
 
     def _extract_features(self, df: pd.DataFrame) -> np.ndarray:
@@ -402,3 +422,124 @@ class ClusterRunner:
 
         with open(log_path, "w", encoding="utf-8") as f:
             json.dump(stats, f, indent=2, ensure_ascii=False)
+
+    def _select_typical_windows(self, df_with_state: pd.DataFrame) -> pd.DataFrame:
+        """挑选典型窗口
+
+        该方法为每个状态ID挑选典型窗口：
+        - 稳定状态（is_pure=True）：按state_proba降序，取前3个
+        - 模糊状态（is_pure=False）：按state_proba升序，取前3个
+        - 如果某类窗口数量不足3个，就全取
+
+        Args:
+            df_with_state: 带状态信息的数据框
+
+        Returns:
+            pd.DataFrame: 典型窗口数据框
+        """
+        if df_with_state.empty:
+            return pd.DataFrame()
+
+        typical_windows = []
+
+        # 按state_id分组
+        for state_id, group in df_with_state.groupby("state_id"):
+            # 处理稳定状态窗口
+            stable_windows = group[group["is_pure"]]
+            if not stable_windows.empty:
+                # 按概率降序，取前3个
+                top_stable = stable_windows.nlargest(min(3, len(stable_windows)), "state_proba")
+                typical_windows.append(top_stable)
+
+            # 处理模糊状态窗口
+            fuzzy_windows = group[~group["is_pure"]]
+            if not fuzzy_windows.empty:
+                # 按概率升序，取前3个
+                top_fuzzy = fuzzy_windows.nsmallest(min(3, len(fuzzy_windows)), "state_proba")
+                typical_windows.append(top_fuzzy)
+
+        # 合并所有典型窗口
+        if typical_windows:
+            return pd.concat(typical_windows)
+        return pd.DataFrame()
+
+    def _save_typical_windows(self, typical_windows: pd.DataFrame, data_type: str):
+        """保存典型窗口
+
+        该方法将典型窗口保存到文件系统，便于后续分析和可视化。
+
+        Args:
+            typical_windows: 典型窗口数据框
+            data_type: 数据类型，"train" 或 "test"
+        """
+        if typical_windows.empty:
+            logger.info(f"没有为 {data_type} 集找到典型窗口")
+            return
+
+        # 确保输出目录存在
+        output_dir = "data/clusters/typical_windows"
+        os.makedirs(output_dir, exist_ok=True)
+
+        # 保存典型窗口
+        output_path = f"{output_dir}/{data_type}_typical_windows.parquet"
+        typical_windows.to_parquet(output_path)
+        logger.info(f"已保存 {len(typical_windows)} 个 {data_type} 集典型窗口到 {output_path}")
+
+    def _visualize_typical_windows(self, typical_windows: pd.DataFrame, data_type: str):
+        """可视化典型窗口
+
+        该方法为每个典型窗口生成可视化图表，展示窗口的延迟和丢包数据。
+
+        Args:
+            typical_windows: 典型窗口数据框
+            data_type: 数据类型，"train" 或 "test"
+        """
+        if typical_windows.empty:
+            logger.info(f"没有为 {data_type} 集生成典型窗口可视化")
+            return
+
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        # 确保输出目录存在
+        output_dir = f"output/reports/typical_windows/{data_type}"
+        os.makedirs(output_dir, exist_ok=True)
+
+        for idx, (window_id, window) in enumerate(typical_windows.iterrows()):
+            state_id = window["state_id"]
+            state_name = window["state_name"]
+            is_pure = window["is_pure"]
+            proba = window["state_proba"]
+
+            # 提取延迟和丢包数据
+            delay_up = np.array(window["raw_delay_up"])
+            delay_down = np.array(window["raw_delay_down"])
+            loss_up = np.array(window["raw_loss_up"])
+            loss_down = np.array(window["raw_loss_down"])
+
+            # 创建图表
+            fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
+
+            # 绘制延迟图
+            ax1.plot(delay_up, label="上行延迟", color="blue")
+            ax1.plot(delay_down, label="下行延迟", color="orange")
+            ax1.set_title(f"状态 {state_id} - {state_name} (窗口 {idx+1})\n" \
+                         f"{"稳定状态" if is_pure else "模糊状态"}, 概率: {proba:.4f}")
+            ax1.set_ylabel("延迟 (ms)")
+            ax1.legend()
+            ax1.grid(True)
+
+            # 绘制丢包图
+            ax2.plot(loss_up, label="上行丢包", color="blue")
+            ax2.plot(loss_down, label="下行丢包", color="orange")
+            ax2.set_xlabel("时间 (s)")
+            ax2.set_ylabel("丢包率")
+            ax2.legend()
+            ax2.grid(True)
+
+            # 保存图表
+            plt.tight_layout()
+            output_path = f"{output_dir}/state_{state_id}_window_{idx+1}.png"
+            plt.savefig(output_path, dpi=300)
+            plt.close()
+            logger.info(f"已保存典型窗口可视化: {output_path}")
