@@ -280,11 +280,11 @@ class Visualizer:
         print("可视化文件已保存到:", plot_path)
         ```
         """
-        from src.netfaker.simcore.utils import setup_matplotlib_font
-        
+        from netfaker.simcore.utils import setup_matplotlib_font
+
         # 设置Matplotlib字体，确保中文显示正常
-        font_config = setup_matplotlib_font()
-        
+        setup_matplotlib_font()
+
         plt.figure(figsize=(14, 12))
 
         # 获取状态信息

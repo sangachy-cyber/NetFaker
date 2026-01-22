@@ -3,9 +3,8 @@
 提供网络仿真核心功能相关的工具函数和辅助类，包括文件处理、数据转换等。
 """
 
-import os
 import platform
-from typing import Dict, Optional
+from typing import Dict
 
 
 def setup_matplotlib_font() -> Dict[str, str]:
@@ -16,7 +15,6 @@ def setup_matplotlib_font() -> Dict[str, str]:
     Returns:
         Dict[str, str]: 当前使用的字体配置
     """
-    import matplotlib.pyplot as plt
     import matplotlib as mpl
 
     # 获取当前操作系统

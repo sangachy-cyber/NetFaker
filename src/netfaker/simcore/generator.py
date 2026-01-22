@@ -55,7 +55,7 @@ def generate_simulation_params(strategy_name: str, params: Dict[str, Any]) -> Di
         params: 生成请求参数
 
     Returns:
-        Dict[str, Any]: 生成的仿真参数
+        Dict[str, Any]: 生成的仿真参数，包含文件路径
 
     Raises:
         StrategyError: 当策略执行失败时

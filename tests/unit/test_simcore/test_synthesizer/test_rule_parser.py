@@ -4,6 +4,7 @@
 """
 
 import pytest
+
 from netfaker.simcore.synthesizer.rule_parser import RuleParser
 
 

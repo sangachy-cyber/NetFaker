@@ -95,10 +95,10 @@ class RuleSynthesizer:
                 for t in range(100):
                     # 提取6通道数据
                     ul_delay = window["raw_delay_up"][t]
-                    ul_loss = window["raw_loss_up"][t] * 100.0  # 转换为百分比
+                    ul_loss = window["raw_loss_up"][t]  # 已经是百分比形式
                     ul_bw = window["raw_bw_up"][t]
                     dl_delay = window["raw_delay_down"][t]
-                    dl_loss = window["raw_loss_down"][t] * 100.0  # 转换为百分比
+                    dl_loss = window["raw_loss_down"][t]  # 已经是百分比形式
                     dl_bw = window["raw_bw_down"][t]
 
                     # 添加数据点

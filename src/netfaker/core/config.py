@@ -42,7 +42,10 @@ class NetFakerConfig(BaseSettings):
     # 数据库配置
     database_url: str = "sqlite:///./data/db/netfaker.db"
     db_dir: str = "data/db"
-    output_dir: str = "output/holowan"
+    output_dir: str = "data/outputs"
+
+    # 仿真配置
+    window_pool_path: str = "data/clusters/train_with_state.parquet"
 
     # 模型配置
     model_path: str = "data/models/default_model.pt"

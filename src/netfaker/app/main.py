@@ -27,6 +27,17 @@ async def lifespan(app: FastAPI):
     logger.info("NetFaker API服务启动成功")
     logger.info(f"服务地址: http://{config.host}:{config.port}")
     logger.info(f"调试模式: {'开启' if config.debug else '关闭'}")
+
+    # 预加载窗口数据
+    try:
+        from netfaker.simcore.synthesizer.window_sampler import WindowSampler
+        logger.info(f"预加载窗口数据，文件路径: {config.window_pool_path}")
+        app.state.window_sampler = WindowSampler(config.window_pool_path)
+        logger.info("窗口数据预加载成功")
+    except Exception as e:
+        logger.error(f"窗口数据预加载失败: {e}")
+        raise
+
     yield
     # 关闭时执行
     logger.info("NetFaker API服务已关闭")

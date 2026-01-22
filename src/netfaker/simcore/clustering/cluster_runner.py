@@ -443,7 +443,7 @@ class ClusterRunner:
         typical_windows = []
 
         # 按state_id分组
-        for state_id, group in df_with_state.groupby("state_id"):
+        for _state_id, group in df_with_state.groupby("state_id"):
             # 处理稳定状态窗口
             stable_windows = group[group["is_pure"]]
             if not stable_windows.empty:
@@ -500,7 +500,8 @@ class ClusterRunner:
 
         import matplotlib.pyplot as plt
         import numpy as np
-        from src.netfaker.simcore.utils import setup_matplotlib_font
+
+        from netfaker.simcore.utils import setup_matplotlib_font
 
         # 设置Matplotlib字体，确保中文显示正常
         font_config = setup_matplotlib_font()
@@ -510,7 +511,7 @@ class ClusterRunner:
         output_dir = f"output/reports/typical_windows/{data_type}"
         os.makedirs(output_dir, exist_ok=True)
 
-        for idx, (window_id, window) in enumerate(typical_windows.iterrows()):
+        for idx, (_window_id, window) in enumerate(typical_windows.iterrows()):
             state_id = window["state_id"]
             state_name = window["state_name"]
             is_pure = window["is_pure"]
@@ -528,17 +529,19 @@ class ClusterRunner:
             # 绘制延迟图
             ax1.plot(delay_up, label="上行延迟", color="blue")
             ax1.plot(delay_down, label="下行延迟", color="orange")
-            ax1.set_title(f"状态 {state_id} - {state_name} (窗口 {idx+1})\n" \
-                         f"{"稳定状态" if is_pure else "模糊状态"}, 概率: {proba:.4f}")
+            title = f"状态 {state_id} - {state_name} (窗口 {idx+1})\n{'稳定状态' if is_pure else '模糊状态'}, 概率: {proba:.4f}"
+            ax1.set_title(title)
             ax1.set_ylabel("延迟 (ms)")
             ax1.legend()
             ax1.grid(True)
 
             # 绘制丢包图
+            # 设置Y轴范围为-1到101%，便于观察异常值
             ax2.plot(loss_up, label="上行丢包", color="blue")
             ax2.plot(loss_down, label="下行丢包", color="orange")
             ax2.set_xlabel("时间 (s)")
-            ax2.set_ylabel("丢包率")
+            ax2.set_ylabel("丢包率 (%)")
+            ax2.set_ylim(-1, 101)  # 设置Y轴范围为-1到101%，便于观察异常值
             ax2.legend()
             ax2.grid(True)
 

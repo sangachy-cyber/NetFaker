@@ -6,7 +6,8 @@
 
 import argparse
 import json
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 from loguru import logger
 
 from netfaker.simcore.synthesizer import RuleSynthesizer

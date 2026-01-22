@@ -25,7 +25,7 @@ uv pip install -e .
 ### 启动开发服务器
 
 ```bash
-uv run uvicorn netfaker.app.main:app --reload
+uv run uvicorn src.netfaker.app.main:app --reload
 ```
 
 服务器将在 `http://localhost:8000` 启动。
@@ -43,10 +43,9 @@ uv run python -m scripts.main generate --strategy rule_based --scenario video_st
 ## 项目结构
 
 ```
-netfaker/
+NetFaker/
  ├── .gitignore 
  ├── .env.example 
- ├── .env                      # ← 本地环境变量（.gitignore 中忽略） 
  ├── README.md 
  ├── LICENSE 
  ├── pyproject.toml 
@@ -68,91 +67,95 @@ netfaker/
  │       │   ├── main.py               # FastAPI 应用入口 
  │       │   │ 
  │       │   ├── api/ 
- │       │   │   └── v1/ 
- │       │   │       ├── __init__.py 
- │       │   │       ├── endpoints.py  # REST 路由：/simulate, /tasks/{id} 
- │       │   │       └── schemas.py    # Pydantic 模型：请求/响应体 
+ │       │   │   ├── __init__.py 
+ │       │   │   ├── endpoints.py      # REST 路由：/simulate, /tasks/{id} 
+ │       │   │   └── schemas.py        # Pydantic 模型：请求/响应体 
+ │       │   │   └── v1/               # 版本化API目录（预留） 
+ │       │   │       └── __init__.py 
+ │       │   │ 
+ │       │   ├── database/             # 数据库操作 
+ │       │   │   ├── __init__.py 
+ │       │   │   └── task_db.py        # 任务数据库操作 
+ │       │   │ 
+ │       │   ├── models/               # 数据模型定义 
+ │       │   │   └── __init__.py 
  │       │   │ 
  │       │   ├── services/             # 业务逻辑协调 
  │       │   │   ├── __init__.py 
- │       │   │   ├── task_manager.py   # 异步任务调度（调用 simcore.generator） 
- │       │   │   └── hrf_generator.py  # 生成 HoloWAN Recorder File (.hrf) 
+ │       │   │   └── task_manager.py   # 异步任务调度（调用 simcore.generator） 
  │       │   │ 
  │       │   └── utils/                # Web 层专用工具 
- │       │       ├── __init__.py 
- │       │       └── http_client.py    # 调用下游 HoloWAN API 
+ │       │       └── __init__.py 
  │       │ 
- │       └── simcore/                  # 仿真核心逻辑（原 ml/） 
+ │       └── simcore/                  # 仿真核心逻辑 
  │           ├── __init__.py 
- │           │ 
  │           ├── generator.py          # ✨ 统一入口：根据 strategy 路由到具体实现 
+ │           ├── strategy.py           # 策略基类和注册表 
+ │           │ 
+ │           ├── clustering/           # 聚类算法实现 
+ │           │   ├── __init__.py 
+ │           │   ├── cluster_runner.py # 聚类运行器 
+ │           │   ├── feature_extractor.py # 特征提取器 
+ │           │   ├── state_namer.py    # 状态命名器 
+ │           │   ├── visualizer.py     # 聚类可视化 
+ │           │   └── clusterers/       # 聚类算法实现 
+ │           │       ├── __init__.py 
+ │           │       ├── base.py       # 聚类基类 
+ │           │       ├── dbscan.py     # DBSCAN 算法 
+ │           │       └── gmm.py        # GMM 算法 
+ │           │ 
+ │           ├── dataset/              # 数据集处理 
+ │           │   ├── __init__.py 
+ │           │   ├── train_test_splitter.py # 训练测试集划分 
+ │           │   └── window_extractor.py    # 窗口提取器 
+ │           │ 
+ │           ├── io/                   # 文件 I/O 
+ │           │   ├── __init__.py 
+ │           │   ├── dataset_saver.py  # 数据集保存 
+ │           │   ├── holowan_loader.py # HoloWAN 文件加载 
+ │           │   └── holowan_saver.py  # HoloWAN 文件保存 
+ │           │ 
+ │           ├── preprocessing/        # 数据预处理 
+ │           │   ├── __init__.py 
+ │           │   └── holowan_preprocessor.py # HoloWAN 数据预处理 
  │           │ 
  │           ├── strategies/           # 仿真策略实现 
  │           │   ├── __init__.py 
- │           │   ├── base.py           # 抽象基类：ProfileGenerationStrategy 
- │           │   ├── ml_strategy.py    # ML 策略：调用 preprocessing + modeling 
- │           │   └── rule_strategy.py  # 规则策略：基于场景/条件的硬编码逻辑 
+ │           │   ├── base.py           # 策略抽象基类 
+ │           │   ├── ml_strategy.py    # ML 策略：占位符实现 
+ │           │   └── rule_based.py     # 规则策略：基于场景/条件的硬编码逻辑 
  │           │ 
- │           ├── io/                   # 文件 I/O（共用） 
+ │           ├── synthesizer/          # 序列合成器 
  │           │   ├── __init__.py 
- │           │   ├── data_loader.py    # 读取原始数据（CSV, PCAP, JSON） 
- │           │   └── result_saver.py   # 保存处理结果、模型输出等 
+ │           │   ├── rule_parser.py    # 规则解析器 
+ │           │   ├── rule_synthesizer.py # 规则合成器 
+ │           │   └── window_sampler.py # 窗口采样器 
  │           │ 
- │           ├── preprocessing/        # 数据预处理（仅 ML 策略使用） 
+ │           ├── utils/                # 仿真核心工具 
  │           │   ├── __init__.py 
- │           │   ├── cleaner.py        # 数据清洗 
- │           │   ├── feature_engineering.py  # 特征提取 
- │           │   └── clustering.py     # 聚类算法（KMeans, DBSCAN...） 
+ │           │   └── holowan.py        # HoloWAN 文件处理工具 
  │           │ 
- │           ├── modeling/             # 模型训练与推理（仅 ML 策略使用） 
- │           │   ├── __init__.py 
- │           │   ├── models.py         # 模型定义（Sklearn/PyTorch） 
- │           │   ├── trainer.py        # 训练逻辑 
- │           │   └── predictor.py      # 推理接口 
- │           │ 
- │           └── visualization/        # 可视化（可被 ML 或 Rule 使用） 
- │               ├── __init__.py 
- │               ├── plot_clusters.py  # 聚类结果图 
- │               ├── plot_profile.py   # 仿真参数分布图 
- │               └── exporters.py      # 导出 PNG/SVG/HTML 报告 
+ │           └── visualization/        # 可视化 
+ │               └── __init__.py 
  │ 
  ├── scripts/                          # 命令行入口脚本（非包内模块） 
  │   ├── __init__.py 
- │   ├── train_model.py                # 训练 ML 模型 
- │   ├── generate_profile_cli.py       # 命令行生成仿真参数（支持 --strategy） 
- │   └── visualize_results.py          # 批量生成可视化报告 
+ │   ├── main.py                       # 主脚本入口 
+ │   └── ... 
  │ 
  ├── tests/                            # 测试代码 
- │   ├── __init__.py 
- │   ├── conftest.py                   # pytest 全局 fixture 
- │   │ 
- │   ├── unit/ 
- │   │   ├── test_core/ 
- │   │   │   └── test_config.py 
- │   │   ├── test_app/ 
- │   │   │   └── test_hrf_generator.py 
- │   │   └── test_simcore/ 
- │   │       ├── test_strategies/ 
- │   │       │   ├── test_ml_strategy.py 
- │   │       │   └── test_rule_strategy.py 
- │   │       ├── test_preprocessing/ 
- │   │       │   └── test_clustering.py 
- │   │       └── test_visualization/ 
- │   │           └── test_plot_clusters.py 
- │   │ 
- │   └── integration/ 
- │       └── test_end_to_end_simulation.py 
+ │   └── ... 
  │ 
  └── data/                             # 数据资产（运行时生成内容应 .gitignore） 
      ├── raw/                          # 原始输入数据（用户提供或采集） 
      ├── processed/                    # 预处理中间结果 
      ├── models/                       # 训练好的模型文件（.pkl, .pt） 
-     └── outputs/                      # 最终输出（.hrf, 图片, 报告）
+     └── outputs/                      # 最终输出（.txt, 图片, 报告）
 ```
 
 ## 开发规范
 
-请参考 [开发规范](docs/DEVELOPMENT_GUIDE.md) 了解项目的编码标准、工具链配置与协作流程。
+请参考 [开发规范](.trae/rules/project_rules.md) 了解项目的编码标准、工具链配置与协作流程。
 
 ## 测试
 

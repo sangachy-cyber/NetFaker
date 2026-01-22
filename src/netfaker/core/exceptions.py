@@ -65,3 +65,18 @@ class FileError(NetFakerError):
             message: 异常消息
         """
         super().__init__(message, code=500)
+
+
+class SimulationError(NetFakerError):
+    """仿真流程异常。
+
+    当仿真流程执行失败时抛出。
+    """
+
+    def __init__(self, message: str):
+        """初始化仿真异常。
+
+        Args:
+            message: 异常消息
+        """
+        super().__init__(message, code=500)
