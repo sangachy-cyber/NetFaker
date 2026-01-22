@@ -500,6 +500,11 @@ class ClusterRunner:
 
         import matplotlib.pyplot as plt
         import numpy as np
+        from src.netfaker.simcore.utils import setup_matplotlib_font
+
+        # 设置Matplotlib字体，确保中文显示正常
+        font_config = setup_matplotlib_font()
+        logger.info(f"Matplotlib字体配置: {font_config}")
 
         # 确保输出目录存在
         output_dir = f"output/reports/typical_windows/{data_type}"
