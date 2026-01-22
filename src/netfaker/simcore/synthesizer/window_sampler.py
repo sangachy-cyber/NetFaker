@@ -42,8 +42,6 @@ class WindowSampler:
         logger.info(f"加载窗口数据: {self.window_pool_path}")
         try:
             self.data = pd.read_parquet(self.window_pool_path)
-        except FileNotFoundError as err:
-            raise FileNotFoundError(f"窗口数据文件不存在: {self.window_pool_path}") from err
         except Exception as e:
             raise ValueError(f"加载窗口数据失败: {str(e)}") from e
 
@@ -64,6 +62,7 @@ class WindowSampler:
         """按state_id建立窗口索引映射。
         """
         logger.info("构建state_id到窗口的索引映射")
+        
         # 按state_id分组，获取每个state_id对应的窗口索引
         grouped = self.data.groupby("state_id")
         for state_id, group in grouped:
