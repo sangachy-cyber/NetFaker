@@ -20,7 +20,7 @@ dependencies = [
     "matplotlib>=3.8.0",
     "seaborn>=0.13.0",
     "pandas>=2.0.0",
-    "holowan @ file://${PROJECT_ROOT}/third_party/holowan_python_api-2908",
+    "holowan @ file://${PROJECT_ROOT}/third_party/holowan_python_api-2909",
 ]
 
 [project.urls]
