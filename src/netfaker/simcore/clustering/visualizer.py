@@ -201,15 +201,20 @@ class Visualizer:
             # 如果 UMAP 不可用，使用随机嵌入作为 fallback
             return np.random.randn(X.shape[0], 2)
 
-        # 调整 UMAP 参数以获得更好的聚类可视化效果
-        umap = UMAP(
-            n_components=2,
-            n_neighbors=15,  # 增加邻居数量，平衡局部和全局结构
-            min_dist=0.1,    # 增加最小距离，使聚类更清晰
-            metric="euclidean",
-            random_state=42
-        )
-        return umap.fit_transform(X)
+        try:
+            # 调整 UMAP 参数以获得更好的聚类可视化效果
+            umap = UMAP(
+                n_components=2,
+                n_neighbors=15,  # 增加邻居数量，平衡局部和全局结构
+                min_dist=0.1,    # 增加最小距离，使聚类更清晰
+                metric="euclidean",
+                random_state=42
+            )
+            return umap.fit_transform(X)
+        except Exception as e:
+            # 如果UMAP运行失败，打印异常信息并使用随机嵌入作为 fallback
+            print(f"UMAP可视化失败: {str(e)}")
+            return np.random.randn(X.shape[0], 2)
 
     def _run_tsne(self, X: np.ndarray) -> np.ndarray:
         """执行t-SNE降维。
@@ -229,13 +234,18 @@ class Visualizer:
         print("t-SNE嵌入形状:", embedding.shape)  # 输出 (n_samples, 2)
         ```
         """
-        # 使用简化的 TSNE 参数，确保与当前 scikit-learn 版本兼容
-        tsne = TSNE(
-            n_components=2,
-            perplexity=30,
-            random_state=42
-        )
-        return tsne.fit_transform(X).astype(np.float64)
+        try:
+            # 使用简化的 TSNE 参数，确保与当前 scikit-learn 版本兼容
+            tsne = TSNE(
+                n_components=2,
+                perplexity=30,
+                random_state=42
+            )
+            return tsne.fit_transform(X).astype(np.float64)
+        except Exception as e:
+            # 如果t-SNE运行失败，打印异常信息并使用随机嵌入作为 fallback
+            print(f"t-SNE可视化失败: {str(e)}")
+            return np.random.randn(X.shape[0], 2)
 
     def _create_static_plot(self, embedding: np.ndarray, state_info: Dict[str, np.ndarray],
                            output_dir: str, title: str, method: str) -> str:
