@@ -46,6 +46,11 @@ class NetFakerConfig(BaseSettings):
 
     # 仿真配置
     window_pool_path: str = "data/clusters/train_with_state.parquet"
+    # 边界平滑配置
+    enable_boundary_smoothing: bool = True
+    boundary_overlap_points: int = 5
+    loss_continuation_points: int = 2
+    loss_burst_threshold_pct: float = 5.0
 
     # 模型配置
     model_path: str = "data/models/default_model.pt"

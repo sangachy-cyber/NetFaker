@@ -57,11 +57,13 @@ class HoloWANWindow:
 
     Attributes:
         data_points: 窗口中的数据点列表
+        state_id: 窗口状态ID
     """
 
     data_points: list[HoloWANDataPoint] = field(
         default_factory=list
     )  # 窗口中的数据点列表
+    state_id: int = -1  # 窗口状态ID，-1表示无状态信息
 
     def add_data_point(self, data_point: HoloWANDataPoint) -> None:
         """添加数据点到窗口。
@@ -121,6 +123,7 @@ class HoloWANFile:
         end_time: 结束时间
         loss_average: 平均丢包率
         data: 数据点列表
+        state_sequence: 状态序列列表
     """
 
     # 基本属性
@@ -155,6 +158,7 @@ class HoloWANFile:
 
     # 非dataclass字段，不会被自动初始化
     data: list[HoloWANDataPoint] = field(default_factory=list, init=False)
+    state_sequence: list[int] = field(default_factory=list, init=False)
 
     def __post_init__(self):
         """初始化后处理，用于处理额外的初始化逻辑。
@@ -172,6 +176,8 @@ class HoloWANFile:
 
         # 初始化数据列表
         self.data = []
+        # 初始化状态序列
+        self.state_sequence = []
 
         # 解析switch字符串并设置各个开关变量
         switch_values = list(map(int, self.switch.split(",")))
@@ -239,7 +245,7 @@ class HoloWANFile:
             bw1=ul_bw,
             delay2=dl_delay,
             loss2=dl_loss,
-            bw2=dl_bw,
+            bw2=dl_bw
         )
         self.data.append(data_point)
 
@@ -273,6 +279,7 @@ class HoloWANFile:
             >>> len(holowan_file.data)
             2
         """
+        # 将窗口数据添加到文件数据中
         self.data.extend(window.data_points)
 
     def _add_window_data(self, windows: np.ndarray) -> None:
@@ -380,7 +387,8 @@ class HoloWANFile:
             "Packet Size(byte):": HoloWANFile._parse_packet_size_line,
             "Loss Average:": HoloWANFile._parse_loss_average_line,
             "Enable Reordering:": HoloWANFile._parse_enable_reordering_line,
-            "Switch:": HoloWANFile._parse_switch_line
+            "Switch:": HoloWANFile._parse_switch_line,
+            "StateSequence:": HoloWANFile._parse_state_sequence_line
         }
 
         # 查找并调用对应的解析器
@@ -498,6 +506,23 @@ class HoloWANFile:
             header["switch"] = parts[1].strip()
 
     @staticmethod
+    def _parse_state_sequence_line(header, line):
+        """解析状态序列行。
+
+        Args:
+            header: 存储解析结果的字典
+            line: 要解析的行
+        """
+        parts = line.split(":")
+        if len(parts) > 1:
+            state_sequence_str = parts[1].strip()
+            # 将状态序列字符串转换为整数列表
+            try:
+                header["state_sequence"] = list(map(int, state_sequence_str.split(",")))
+            except ValueError:
+                header["state_sequence"] = []
+
+    @staticmethod
     def _parse_operator_line(header, line):
         """解析运营商行。
 
@@ -537,7 +562,7 @@ class HoloWANFile:
                     bw1=bw1,
                     delay2=delay2,
                     loss2=loss2,
-                    bw2=bw2,
+                    bw2=bw2
                 )
                 data_points.append(data_point)
             except (ValueError, IndexError):
@@ -561,6 +586,12 @@ class HoloWANFile:
         for key, value in header.items():
             if hasattr(holowan_file, key):
                 setattr(holowan_file, key, value)
+        
+        # 保存状态序列
+        if "state_sequence" in header:
+            holowan_file.state_sequence = header["state_sequence"]
+        else:
+            holowan_file.state_sequence = []
 
         # 手动解析switch字符串并设置各个开关变量
         if "switch" in header:
@@ -572,7 +603,7 @@ class HoloWANFile:
             holowan_file.switch_loss2 = bool(switch_values[4])
             holowan_file.switch_bw2 = bool(switch_values[5])
 
-        # 添加数据点
+        # 直接添加数据点
         for data_point in data_points:
             holowan_file._add_data_point(data_point)
 
@@ -595,11 +626,13 @@ class HoloWANFile:
         """
         return self.data.copy()
 
-    def write_to_file(self, output_path):
+    def write_to_file(self, output_path, state_sequence=None, window_size=100):
         """生成HoloWAN文件。
 
         Args:
             output_path: 输出文件路径
+            state_sequence: 状态序列列表，每个元素对应一个窗口的状态ID
+            window_size: 每个窗口的数据点数，默认100个点（对应10秒，采样间隔0.1秒）
 
         Returns:
             str: 生成的文件路径
@@ -654,6 +687,19 @@ class HoloWANFile:
             "Contents: Delay1(ms),Loss1(%),Bandwidth1(Mbps),Delay2(ms),Loss2(%),Bandwidth2(Mbps)"
         )
         file_content.append(f"Switch: {self._get_switch_str()}")
+        
+        # 写入状态序列信息（基于窗口，每个窗口对应一个状态ID）
+        # 如果没有提供状态序列，使用默认的-1序列
+        if state_sequence is None:
+            # 计算窗口数量
+            num_windows = len(self.data) // window_size
+            if len(self.data) % window_size > 0:
+                num_windows += 1
+            # 使用默认的-1状态ID
+            state_sequence = [-1] * num_windows
+        
+        state_sequence_str = ",".join(map(str, state_sequence))
+        file_content.append(f"StateSequence: {state_sequence_str}")
 
         # 写入分隔符
         file_content.append("------------------------------------------------")

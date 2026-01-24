@@ -72,20 +72,20 @@ class WindowSampler:
         for state_id, window_count in self.state_to_windows.items():
             logger.debug(f"state_id={state_id}: {len(window_count)} 个窗口")
 
-    def sample_windows(self, state_id: int, n_windows: int, seed: Optional[int] = None) -> List[pd.Series]:
+    def sample_windows(self, state_id: int, n_windows: int, seed: Optional[int] = None) -> List[Dict]:
         """从指定state_id的窗口中抽样。
-
+        
         Args:
             state_id: 要抽样的state_id
             n_windows: 要抽样的窗口数量
             seed: 随机种子，用于控制抽样的可复现性
-
+            
         Returns:
-            List[pd.Series]: 抽样得到的窗口列表
-
+            List[Dict]: 抽样得到的窗口字典列表
+            
         Raises:
             ValueError: 当指定的state_id不存在时
-
+            
         Examples:
             >>> sampler = WindowSampler("data/clusters/train_with_state.parquet")
             >>> windows = sampler.sample_windows(0, 2, seed=42)
@@ -105,8 +105,8 @@ class WindowSampler:
         # 有放回随机抽样
         sampled_indices = rng.choice(available_windows, size=n_windows, replace=True)
 
-        # 获取抽样的窗口数据
-        sampled_windows = [self.data.loc[idx] for idx in sampled_indices]
+        # 获取抽样的窗口数据，转换为字典避免SettingWithCopyWarning
+        sampled_windows = [self.data.loc[idx].to_dict() for idx in sampled_indices]
 
         logger.info(f"从state_id={state_id}抽样 {n_windows} 个窗口，可用窗口数: {len(available_windows)}")
 

@@ -112,6 +112,31 @@ class HoloWANLoader:
         # 添加原始值前缀
         df = self._add_raw_prefix(df)
 
+        # 添加state_id列，不需要raw_前缀
+        # 每个窗口对应一个state_id，每个窗口包含100个数据点
+        window_size = 100
+        state_sequence = holowan_file.state_sequence
+        
+        # 如果有状态序列，将每个窗口的state_id复制到窗口内的所有数据点
+        if state_sequence:
+            # 计算每个state_id对应的数据点数量
+            state_ids = []
+            for i, state_id in enumerate(state_sequence):
+                # 计算当前state_id对应的起始和结束索引
+                start_idx = i * window_size
+                end_idx = min((i + 1) * window_size, len(df))
+                # 复制state_id到对应的数据点
+                state_ids.extend([state_id] * (end_idx - start_idx))
+            
+            # 如果state_ids长度小于df长度，用-1填充
+            if len(state_ids) < len(df):
+                state_ids.extend([-1] * (len(df) - len(state_ids)))
+            
+            df['state_id'] = state_ids
+        else:
+            # 如果没有状态序列，所有数据点的state_id都为-1
+            df['state_id'] = -1
+
         return df
 
     def _rename_columns(self, df: pd.DataFrame) -> pd.DataFrame:
